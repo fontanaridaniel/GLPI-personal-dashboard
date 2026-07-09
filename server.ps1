@@ -7,13 +7,12 @@
 # - Auto free port when HOST_PORT=0
 # - Asks GLPI password at startup
 # - Serves dashboard.html
-# - Exposes /api/stats
-# - Reads tickets only, not tasks
-# - Assigned tickets are detected from:
-#   ticket.team[] where role == "assigned" and id == USER_ID
-# - Detailed server logs
-# - Clean shutdown on CTRL+C / script exit
-# - Re-authenticates if GLPI returns invalid OAuth token, even with HTTP 400
+# - Exposes /api/stats and /api/tasks
+# - Reads tickets and ticket tasks
+# - Ticket assignment: ticket.team[] role == assigned and id == USER_ID
+# - Task ownership: task user/user_editor/user_tech == USER_ID
+# - Done task: state == 2
+# - No company URL hardcoded: all URLs are read from .env
 # =========================
 
 $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
@@ -22,6 +21,7 @@ $dashboardPath = Join-Path $scriptDir "dashboard.html"
 $pidPath = Join-Path $scriptDir "dashboard-server.pid.json"
 
 $ticketEndpoint = "Assistance/Ticket"
+$ticketTaskEndpointTemplate = "Assistance/Ticket/{0}/Timeline/Task"
 $openTicketFilter = "status.id=out=(5,6);is_deleted==false"
 
 $script:httpListener = $null
@@ -30,15 +30,14 @@ $script:ctrlCSubscription = $null
 $script:exitSubscription = $null
 $script:logLevel = "INFO"
 $script:hostPrefix = $null
+$script:accessToken = $null
 
 # =========================
 # LOGGING
 # =========================
 
 function Get-LogLevelNumber {
-    param (
-        [string]$Level
-    )
+    param ([string]$Level)
 
     switch (($Level + "").ToUpperInvariant()) {
         "DEBUG" { return 0 }
@@ -88,9 +87,7 @@ function Write-Log {
 }
 
 function Read-ErrorResponseBody {
-    param (
-        $ErrorRecord
-    )
+    param ($ErrorRecord)
 
     try {
         $response = $ErrorRecord.Exception.Response
@@ -120,9 +117,7 @@ function Read-ErrorResponseBody {
 }
 
 function Get-HttpStatusCode {
-    param (
-        $ErrorRecord
-    )
+    param ($ErrorRecord)
 
     try {
         if ($ErrorRecord.Exception.Response -and $ErrorRecord.Exception.Response.StatusCode) {
@@ -135,9 +130,7 @@ function Get-HttpStatusCode {
 }
 
 function Get-ExceptionDetails {
-    param (
-        $ErrorRecord
-    )
+    param ($ErrorRecord)
 
     $statusCode = Get-HttpStatusCode $ErrorRecord
     $responseBody = Read-ErrorResponseBody $ErrorRecord
@@ -176,9 +169,7 @@ function New-ErrorResponseObject {
 # =========================
 
 function Stop-DashboardServer {
-    param (
-        [string]$Reason = "Shutdown"
-    )
+    param ([string]$Reason = "Shutdown")
 
     $script:stopRequested = $true
 
@@ -261,8 +252,6 @@ function Register-DashboardShutdownHandlers {
                 }
                 catch {}
             }
-
-        Write-Log -Level DEBUG -Message "Handler CTRL+C registrato"
     }
     catch {
         Write-Log -Level WARN -Message "Impossibile registrare handler CTRL+C" -Data @{
@@ -296,8 +285,6 @@ function Register-DashboardShutdownHandlers {
                 }
                 catch {}
             }
-
-        Write-Log -Level DEBUG -Message "Handler uscita PowerShell registrato"
     }
     catch {
         Write-Log -Level WARN -Message "Impossibile registrare handler uscita PowerShell" -Data @{
@@ -343,12 +330,6 @@ function Initialize-DashboardSingleInstance {
                             exit 1
                         }
                     }
-                    else {
-                        Write-Log -Level WARN -Message "PID file trovato, ma il processo non sembra essere questa dashboard. Rimuovo solo il PID file." -Data @{
-                            oldPid = $oldPid
-                            commandLine = $commandLine
-                        }
-                    }
                 }
             }
         }
@@ -383,9 +364,7 @@ function Initialize-DashboardSingleInstance {
 # =========================
 
 function Load-Env {
-    param (
-        [string]$Path
-    )
+    param ([string]$Path)
 
     if (-not (Test-Path $Path)) {
         Write-Host "[ERR] File .env non trovato: $Path" -ForegroundColor Red
@@ -481,9 +460,7 @@ function Get-FreeLocalPort {
 }
 
 function Resolve-LocalHostPrefix {
-    param (
-        [hashtable]$EnvVars
-    )
+    param ([hashtable]$EnvVars)
 
     $hostValue = Get-EnvValue -EnvVars $EnvVars -Key "HOST" -Default $null
     $portValue = Get-EnvValue -EnvVars $EnvVars -Key "HOST_PORT" -Default "0"
@@ -535,9 +512,7 @@ function Resolve-LocalHostPrefix {
 # =========================
 
 function New-QueryString {
-    param (
-        [hashtable]$Params
-    )
+    param ([hashtable]$Params)
 
     if (-not $Params -or $Params.Count -eq 0) {
         return ""
@@ -562,7 +537,7 @@ function New-QueryString {
 }
 
 # =========================
-# AUTH
+# AUTH / GLPI GET
 # =========================
 
 function New-GlpiToken {
@@ -630,10 +605,6 @@ function Test-GlpiAuthError {
 
     return $false
 }
-
-# =========================
-# GLPI GET
-# =========================
 
 function Invoke-GlpiGet {
     param (
@@ -715,13 +686,11 @@ function Invoke-GlpiGet {
 }
 
 # =========================
-# RESPONSE HELPERS
+# DATA HELPERS
 # =========================
 
 function Convert-ToArray {
-    param (
-        $Value
-    )
+    param ($Value)
 
     if ($null -eq $Value) {
         return @()
@@ -760,9 +729,7 @@ function Get-PropValue {
 }
 
 function Get-IdValue {
-    param (
-        $Value
-    )
+    param ($Value)
 
     if ($null -eq $Value) {
         return $null
@@ -790,9 +757,7 @@ function Get-IdValue {
 }
 
 function Get-TextValue {
-    param (
-        $Value
-    )
+    param ($Value)
 
     if ($null -eq $Value) {
         return ""
@@ -805,14 +770,71 @@ function Get-TextValue {
     return [string]$Value
 }
 
+function Get-ItemDate {
+    param (
+        $Item,
+        [string[]]$FieldNames
+    )
+
+    foreach ($field in $FieldNames) {
+        $value = Get-PropValue $Item @($field)
+
+        if ($null -eq $value -or "$value" -eq "") {
+            continue
+        }
+
+        $parsed = [datetime]::MinValue
+
+        if ([datetime]::TryParse([string]$value, [ref]$parsed)) {
+            return $parsed
+        }
+    }
+
+    return [datetime]::MinValue
+}
+
+function Format-DateValue {
+    param ([datetime]$Date)
+
+    if ($Date -eq [datetime]::MinValue) {
+        return "data sconosciuta"
+    }
+
+    return $Date.ToString("yyyy-MM-dd HH:mm")
+}
+
+function Convert-ToPlainText {
+    param ($Value)
+
+    if ($null -eq $Value) {
+        return ""
+    }
+
+    $text = [string]$Value
+    $text = $text -replace "<br\s*/?>", "`n"
+    $text = $text -replace "</p>", "`n"
+    $text = $text -replace "<[^>]+>", ""
+    $text = [System.Net.WebUtility]::HtmlDecode($text)
+
+    return $text.Trim()
+}
+
+function Get-TaskData {
+    param ($Task)
+
+    if ($Task -and $Task.PSObject.Properties.Name -contains "item" -and $Task.item) {
+        return $Task.item
+    }
+
+    return $Task
+}
+
 # =========================
 # TICKETS
 # =========================
 
 function Get-AllTickets {
-    param (
-        [string]$Filter
-    )
+    param ([string]$Filter)
 
     $endpoint = "$script:apiBaseUrl/$ticketEndpoint"
 
@@ -837,10 +859,6 @@ function Get-AllTickets {
 
         $ticketsPage = @(Convert-ToArray $response)
 
-        Write-Log -Level DEBUG -Message ("Pagina ticket {0} ricevuta" -f $pageNumber) -Data @{
-            count = $ticketsPage.Count
-        }
-
         if ($ticketsPage.Count -eq 0) {
             break
         }
@@ -864,9 +882,7 @@ function Get-AllTickets {
 }
 
 function Get-TicketStatusId {
-    param (
-        $Ticket
-    )
+    param ($Ticket)
 
     $status = Get-PropValue $Ticket @("status", "status_id", "statuses_id")
     $statusId = Get-IdValue $status
@@ -877,37 +893,18 @@ function Get-TicketStatusId {
 
     $statusText = Get-TextValue $status
 
-    if ($statusText -match "(?i)new|nuovo|nuova") {
-        return 1
-    }
-
-    if ($statusText -match "(?i)assigned|assegnato") {
-        return 2
-    }
-
-    if ($statusText -match "(?i)planned|pianificato") {
-        return 3
-    }
-
-    if ($statusText -match "(?i)pending|sospeso|in attesa") {
-        return 4
-    }
-
-    if ($statusText -match "(?i)solved|risolto") {
-        return 5
-    }
-
-    if ($statusText -match "(?i)closed|chiuso") {
-        return 6
-    }
+    if ($statusText -match "(?i)new|nuovo|nuova") { return 1 }
+    if ($statusText -match "(?i)assigned|assegnato") { return 2 }
+    if ($statusText -match "(?i)planned|pianificato") { return 3 }
+    if ($statusText -match "(?i)pending|sospeso|in attesa") { return 4 }
+    if ($statusText -match "(?i)solved|risolto") { return 5 }
+    if ($statusText -match "(?i)closed|chiuso") { return 6 }
 
     return $null
 }
 
 function Get-TicketTypeId {
-    param (
-        $Ticket
-    )
+    param ($Ticket)
 
     $type = Get-PropValue $Ticket @(
         "type",
@@ -926,13 +923,8 @@ function Get-TicketTypeId {
 
     $typeText = Get-TextValue $type
 
-    if ($typeText -match "(?i)incident|incidente|accident") {
-        return 1
-    }
-
-    if ($typeText -match "(?i)request|richiesta") {
-        return 2
-    }
+    if ($typeText -match "(?i)incident|incidente|accident") { return 1 }
+    if ($typeText -match "(?i)request|richiesta") { return 2 }
 
     return $null
 }
@@ -954,13 +946,6 @@ function Test-TeamAssignedToUser {
         $memberId = Get-IdValue (Get-PropValue $member @("id"))
 
         if ($role -eq "assigned" -and $null -ne $memberId -and [int]$memberId -eq [int]$UserId) {
-            Write-Log -Level DEBUG -Message "Ticket assegnato trovato per USER_ID" -Data @{
-                ticketId = Get-IdValue (Get-PropValue $Ticket @("id"))
-                ticketName = Get-PropValue $Ticket @("name")
-                userId = $UserId
-                memberName = Get-PropValue $member @("display_name", "name")
-            }
-
             return $true
         }
     }
@@ -1085,6 +1070,158 @@ function Get-DashboardStats {
 }
 
 # =========================
+# TASKS
+# =========================
+
+function Get-TicketTasks {
+    param ([int]$TicketId)
+
+    $relativeEndpoint = $ticketTaskEndpointTemplate -f $TicketId
+    $endpoint = "$script:apiBaseUrl/$relativeEndpoint"
+
+    try {
+        $response = Invoke-GlpiGet -Uri $endpoint
+        $tasks = @(Convert-ToArray $response)
+
+        $tasks = @(
+            $tasks | Sort-Object `
+                @{ Expression = { Get-ItemDate (Get-TaskData $_) @("date_creation", "date", "begin", "date_mod") }; Descending = $true },
+                @{ Expression = { [long](Get-IdValue (Get-PropValue (Get-TaskData $_) @("id"))) }; Descending = $true }
+        )
+
+        return $tasks
+    }
+    catch {
+        Write-Log -Level WARN -Message ("Impossibile leggere le attività per il ticket #{0}" -f $TicketId) -Data @{
+            ticketId = $TicketId
+            error = $_.Exception.Message
+        }
+
+        return @()
+    }
+}
+
+function Test-TaskBelongsToUser {
+    param (
+        $Task,
+        [int]$UserId
+    )
+
+    $taskData = Get-TaskData $Task
+
+    foreach ($field in @(
+        "user",
+        "user_editor",
+        "user_tech"
+    )) {
+        $value = Get-PropValue $taskData @($field)
+        $id = Get-IdValue $value
+
+        if ($null -ne $id -and [int]$id -eq [int]$UserId) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Test-TaskIsTodo {
+    param ($Task)
+
+    $taskData = Get-TaskData $Task
+    $stateId = Get-IdValue (Get-PropValue $taskData @("state"))
+
+    if ($stateId -eq 2) {
+        return $false
+    }
+
+    return $true
+}
+
+function Get-MyTicketTasks {
+    $started = Get-Date
+
+    Write-Log -Level INFO -Message "Lettura attività chiamate..."
+
+    $tickets = @(Get-AllTickets -Filter $openTicketFilter)
+    $results = @()
+
+    $counter = 0
+
+    foreach ($ticket in $tickets) {
+        $counter++
+
+        $ticketId = Get-IdValue (Get-PropValue $ticket @("id"))
+
+        if ($null -eq $ticketId) {
+            continue
+        }
+
+        $ticketTitle = Get-PropValue $ticket @("name", "title")
+
+        if (-not $ticketTitle) {
+            $ticketTitle = "(senza titolo)"
+        }
+
+        Write-Log -Level DEBUG -Message "Lettura attività ticket" -Data @{
+            ticketId = $ticketId
+            progress = "$counter/$($tickets.Count)"
+        }
+
+        $allTasks = @(Get-TicketTasks -TicketId $ticketId)
+
+        $userTodoTasks = @(
+            $allTasks | Where-Object {
+                (Test-TaskBelongsToUser -Task $_ -UserId $script:targetUserId) -and
+                (Test-TaskIsTodo -Task $_)
+            }
+        )
+
+        foreach ($task in $userTodoTasks) {
+            $taskData = Get-TaskData $task
+
+            $taskId = Get-IdValue (Get-PropValue $taskData @("id"))
+            $taskDate = Get-ItemDate $taskData @("date_creation", "date", "begin", "date_mod")
+            $content = Convert-ToPlainText (Get-PropValue $taskData @("content", "description", "text"))
+
+            if (-not $content) {
+                $content = "(senza contenuto)"
+            }
+
+            $results += [PSCustomObject]@{
+                ticketId = [int]$ticketId
+                ticketTitle = [string]$ticketTitle
+                ticketUrl = "$script:glpiWebBaseUrl/front/ticket.form.php?id=$ticketId"
+                taskId = [int]$taskId
+                taskDate = Format-DateValue $taskDate
+                content = [string]$content
+            }
+        }
+    }
+
+    $results = @(
+        $results | Sort-Object `
+            @{ Expression = { $_.taskDate }; Descending = $true },
+            @{ Expression = { $_.ticketId }; Descending = $true }
+    )
+
+    $elapsedMs = [int]((Get-Date) - $started).TotalMilliseconds
+
+    Write-Log -Level INFO -Message "Attività chiamate lette" -Data @{
+        tasks = $results.Count
+        elapsedMs = $elapsedMs
+    }
+
+    return [PSCustomObject]@{
+        chiamate = @($results)
+        problemi = @()
+        cambiamenti = @()
+        aggiornatoAlle = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        durataMs = $elapsedMs
+    }
+}
+
+# =========================
 # WEB SERVER
 # =========================
 
@@ -1123,7 +1260,7 @@ function Send-Json {
         [int]$StatusCode = 200
     )
 
-    $json = $Object | ConvertTo-Json -Depth 20 -Compress
+    $json = $Object | ConvertTo-Json -Depth 30 -Compress
     Send-Response -Context $Context -StatusCode $StatusCode -Body $json -ContentType "application/json"
 }
 
@@ -1163,6 +1300,11 @@ function Handle-Request {
             Send-Json -Context $Context -Object $stats -StatusCode 200
         }
 
+        "/api/tasks" {
+            $tasks = Get-MyTicketTasks
+            Send-Json -Context $Context -Object $tasks -StatusCode 200
+        }
+
         "/api/health" {
             Send-Json -Context $Context -Object ([PSCustomObject]@{
                 ok = $true
@@ -1187,9 +1329,7 @@ function Handle-Request {
 }
 
 function Start-LocalServer {
-    param (
-        [string]$Prefix
-    )
+    param ([string]$Prefix)
 
     if (-not $Prefix.StartsWith("http://127.0.0.1:")) {
         Write-Log -Level ERROR -Message "HOST non sicuro. Deve iniziare con http://127.0.0.1:" -Data @{
@@ -1235,6 +1375,7 @@ function Start-LocalServer {
     Write-Log -Level INFO -Message "Web service locale avviato" -Data @{
         dashboard = $Prefix
         apiStats = "$($Prefix.TrimEnd('/'))/api/stats"
+        apiTasks = "$($Prefix.TrimEnd('/'))/api/tasks"
         apiHealth = "$($Prefix.TrimEnd('/'))/api/health"
         localOnly = "127.0.0.1"
         logLevel = $script:logLevel
@@ -1349,6 +1490,7 @@ $script:logLevel = Get-EnvValue -EnvVars $envVars -Key "LOG_LEVEL" -Default "INF
 
 $script:apiBaseUrl = (Get-RequiredString -EnvVars $envVars -Key "GLPI_API_BASE_URL").TrimEnd("/")
 $script:authUrl = Get-RequiredString -EnvVars $envVars -Key "GLPI_AUTH_URL"
+$script:glpiWebBaseUrl = (Get-RequiredString -EnvVars $envVars -Key "GLPI_WEB_BASE_URL").TrimEnd("/")
 
 $script:clientId = Get-RequiredString -EnvVars $envVars -Key "CLIENT_ID"
 $script:clientSecret = Get-RequiredString -EnvVars $envVars -Key "CLIENT_SECRET"
@@ -1357,12 +1499,12 @@ $script:targetUserId = Get-RequiredInt -EnvVars $envVars -Key "USER_ID"
 
 $script:scope = Get-EnvValue -EnvVars $envVars -Key "SCOPE" -Default "email user api inventory status graphql"
 $script:pageSize = [int](Get-EnvValue -EnvVars $envVars -Key "PAGE_SIZE" -Default "100")
-$script:accessToken = $null
 $script:hostPrefix = Resolve-LocalHostPrefix -EnvVars $envVars
 
 Write-Log -Level INFO -Message "Configurazione caricata" -Data @{
     apiBaseUrl = $script:apiBaseUrl
     authUrl = $script:authUrl
+    webBaseUrl = $script:glpiWebBaseUrl
     username = $script:username
     userId = $script:targetUserId
     pageSize = $script:pageSize

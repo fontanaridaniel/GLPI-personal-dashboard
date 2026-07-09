@@ -24,22 +24,23 @@
 
     .dashboard {
       width: 100%;
+      min-height: 100vh;
       display: flex;
       justify-content: center;
-      padding-top: 32px;
+      padding: 32px 16px 18px;
     }
 
     .wrap {
+      width: min(1120px, 100%);
+      min-height: calc(100vh - 50px);
       display: flex;
       flex-direction: column;
-      align-items: center;
+      align-items: stretch;
       gap: 12px;
-      width: 100%;
-      padding: 0 16px;
     }
 
     .topbar {
-      width: min(888px, 100%);
+      width: 100%;
       display: flex;
       justify-content: flex-end;
       align-items: center;
@@ -88,11 +89,6 @@
       color: #ffffff;
     }
 
-    .refresh-button:active {
-      transform: translateY(0);
-      box-shadow: 0 5px 14px rgba(15, 23, 42, 0.10);
-    }
-
     .refresh-button:disabled {
       opacity: 0.55;
       cursor: not-allowed;
@@ -104,25 +100,19 @@
     }
 
     @keyframes spin {
-      from {
-        transform: rotate(0deg);
-      }
-
-      to {
-        transform: rotate(360deg);
-      }
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
 
     .cards {
-      display: flex;
-      flex-direction: row;
-      justify-content: center;
-      align-items: stretch;
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 16px;
     }
 
     .card {
-      width: 210px;
+      width: 100%;
       min-height: 120px;
       background: #ffffff;
       border: 1px solid #e5e7eb;
@@ -145,84 +135,24 @@
     }
 
     @keyframes cardInvertPulse {
-      0% {
-        background: #ffffff;
-        border-color: #e5e7eb;
-        transform: translateY(0);
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
-      }
-
-      12% {
-        background: #111827;
-        border-color: #111827;
-        transform: translateY(-4px) scale(1.015);
-        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
-      }
-
-      24% {
+      0%, 24%, 50%, 100% {
         background: #ffffff;
         border-color: #e5e7eb;
         transform: translateY(0) scale(1);
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
       }
 
-      38% {
+      12%, 38%, 64% {
         background: #111827;
         border-color: #111827;
         transform: translateY(-4px) scale(1.015);
         box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
-      }
-
-      50% {
-        background: #ffffff;
-        border-color: #e5e7eb;
-        transform: translateY(0) scale(1);
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
-      }
-
-      64% {
-        background: #111827;
-        border-color: #111827;
-        transform: translateY(-4px) scale(1.015);
-        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
-      }
-
-      100% {
-        background: #ffffff;
-        border-color: #e5e7eb;
-        transform: translateY(0) scale(1);
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
       }
     }
 
     @keyframes cardTextPulse {
-      0% {
-        color: inherit;
-      }
-
-      12% {
-        color: #ffffff;
-      }
-
-      24% {
-        color: inherit;
-      }
-
-      38% {
-        color: #ffffff;
-      }
-
-      50% {
-        color: inherit;
-      }
-
-      64% {
-        color: #ffffff;
-      }
-
-      100% {
-        color: inherit;
-      }
+      0%, 24%, 50%, 100% { color: inherit; }
+      12%, 38%, 64% { color: #ffffff; }
     }
 
     .title {
@@ -243,17 +173,28 @@
       color: #111827;
     }
 
-    .log-panel {
-      width: min(888px, 100%);
+    .activities {
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 10px;
+    }
+
+    .activity-card {
+      min-height: 100%;
       background: #ffffff;
       border: 1px solid #e5e7eb;
       border-radius: 14px;
       box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
       overflow: hidden;
-      margin-top: 4px;
+      display: flex;
+      flex-direction: column;
     }
 
-    .log-title {
+    .activity-title {
       padding: 10px 14px;
       font-size: 12px;
       font-weight: 700;
@@ -264,67 +205,137 @@
       background: #fafafa;
     }
 
-    .log-list {
-      max-height: 190px;
+    .activity-list {
+      flex: 1;
+      min-height: 280px;
       overflow: auto;
-      padding: 8px 14px;
-      font-family: Consolas, Monaco, monospace;
-      font-size: 12px;
-      line-height: 1.45;
-      color: #374151;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
 
-    .log-row {
-      padding: 4px 0;
-      border-bottom: 1px dashed #f0f0f0;
+    .empty {
+      color: #6b7280;
+      font-size: 13px;
+      padding: 6px 0;
+    }
+
+    .ticket-task-group {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      background: #ffffff;
+      overflow: hidden;
+      transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease, border-color 180ms ease;
+    }
+
+    .ticket-task-group.pulse {
+      animation: ticketGroupInvertPulse 2.4s ease-in-out;
+    }
+
+    .ticket-task-group.pulse .ticket-group-header,
+    .ticket-task-group.pulse .ticket-group-link,
+    .ticket-task-group.pulse .task-row,
+    .ticket-task-group.pulse .task-meta,
+    .ticket-task-group.pulse .task-content {
+      animation: ticketGroupTextPulse 2.4s ease-in-out;
+    }
+
+    .ticket-task-group.pulse .task-row {
+      animation-name: ticketGroupTextPulse, ticketRowBorderPulse;
+      animation-duration: 2.4s, 2.4s;
+      animation-timing-function: ease-in-out, ease-in-out;
+    }
+
+    @keyframes ticketGroupInvertPulse {
+      0%, 24%, 50%, 100% {
+        background: #ffffff;
+        border-color: #e5e7eb;
+        transform: translateY(0) scale(1);
+        box-shadow: none;
+      }
+
+      12%, 38%, 64% {
+        background: #111827;
+        border-color: #111827;
+        transform: translateY(-4px) scale(1.01);
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
+      }
+    }
+
+    @keyframes ticketGroupTextPulse {
+      0%, 24%, 50%, 100% { color: inherit; }
+      12%, 38%, 64% { color: #ffffff; }
+    }
+
+    @keyframes ticketRowBorderPulse {
+      0%, 24%, 50%, 100% { border-top-color: #e5e7eb; }
+      12%, 38%, 64% { border-top-color: #4b5563; }
+    }
+
+    .ticket-group-header {
+      padding: 10px 11px 8px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .ticket-task-group.pulse .ticket-group-header {
+      animation-name: ticketGroupTextPulse, ticketRowBorderPulse;
+      animation-duration: 2.4s, 2.4s;
+      animation-timing-function: ease-in-out, ease-in-out;
+    }
+
+    .ticket-group-link {
+      display: inline-block;
+      font-size: 13px;
+      font-weight: 800;
+      color: #111827;
+      text-decoration: none;
+    }
+
+    .ticket-group-link:hover {
+      text-decoration: underline;
+    }
+
+    .task-row {
+      padding: 10px 11px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .task-row:first-of-type {
+      border-top: none;
+    }
+
+    .task-meta {
+      font-size: 12px;
+      color: #6b7280;
+      margin-bottom: 6px;
+    }
+
+    .task-content {
+      font-size: 13px;
+      line-height: 1.4;
+      color: #374151;
       white-space: pre-wrap;
       word-break: break-word;
     }
 
-    .log-row:last-child {
-      border-bottom: none;
-    }
-
-    .log-info {
-      color: #374151;
-    }
-
-    .log-ok {
-      color: #047857;
-    }
-
-    .log-error {
-      color: #b91c1c;
-    }
-
     @media (max-width: 940px) {
-      .topbar,
-      .log-panel {
-        width: min(436px, 100%);
+      .cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
-      .cards {
-        flex-wrap: wrap;
-        width: min(436px, 100%);
+      .activities {
+        grid-template-columns: 1fr;
       }
     }
 
     @media (max-width: 500px) {
+      .cards {
+        grid-template-columns: 1fr;
+      }
+
       .topbar {
         align-items: flex-start;
-      }
-
-      .cards {
-        flex-direction: column;
-        width: 100%;
-      }
-
-      .card {
-        width: 100%;
-      }
-
-      .log-panel {
-        width: 100%;
       }
     }
   </style>
@@ -368,9 +379,27 @@
         </article>
       </section>
 
-      <section class="log-panel" aria-label="Log dashboard">
-        <div class="log-title">Log dashboard</div>
-        <div class="log-list" id="log-list"></div>
+      <section class="activities" aria-label="Attività">
+        <article class="activity-card" id="activity-card-chiamate">
+          <div class="activity-title">Attività chiamate</div>
+          <div class="activity-list" id="tasks-chiamate">
+            <div class="empty">Caricamento attività...</div>
+          </div>
+        </article>
+
+        <article class="activity-card" id="activity-card-problemi">
+          <div class="activity-title">Attività problemi</div>
+          <div class="activity-list" id="tasks-problemi">
+            <div class="empty">Nessuna attività trovata</div>
+          </div>
+        </article>
+
+        <article class="activity-card" id="activity-card-cambiamenti">
+          <div class="activity-title">Attività cambiamenti</div>
+          <div class="activity-list" id="tasks-cambiamenti">
+            <div class="empty">Nessuna attività trovata</div>
+          </div>
+        </article>
       </section>
     </div>
   </main>
@@ -378,7 +407,6 @@
   <script>
     const REFRESH_SECONDS = 60;
     const REFRESH_MS = REFRESH_SECONDS * 1000;
-    const MAX_LOG_ROWS = 12;
 
     let nextRefreshAt = Date.now() + REFRESH_MS;
     let refreshTimer = null;
@@ -388,7 +416,8 @@
       totaleAperti: null,
       nuoviIncidenti: null,
       nuoveRichieste: null,
-      assegnatiAMe: null
+      assegnatiAMe: null,
+      chiamateTaskIdsByTicket: null
     };
 
     function nowText() {
@@ -399,65 +428,25 @@
       });
     }
 
-    function addLog(level, message, details) {
-      const logList = document.getElementById("log-list");
-      const row = document.createElement("div");
-
-      row.className = "log-row log-" + level;
-
-      let text = "[" + nowText() + "] " + message;
-
-      if (details) {
-        if (typeof details === "string") {
-          text += "\n" + details;
-        } else {
-          text += "\n" + JSON.stringify(details, null, 2);
-        }
-      }
-
-      row.textContent = text;
-      logList.prepend(row);
-
-      while (logList.children.length > MAX_LOG_ROWS) {
-        logList.removeChild(logList.lastChild);
-      }
-
-      if (level === "error") {
-        console.error(message, details || "");
-      } else {
-        console.log(message, details || "");
-      }
-    }
-
     function setStatus(message, type) {
       const statusEl = document.getElementById("status");
       statusEl.textContent = message;
       statusEl.className = "";
 
-      if (type === "ok") {
-        statusEl.classList.add("status-ok");
-      }
-
-      if (type === "error") {
-        statusEl.classList.add("status-error");
-      }
+      if (type === "ok") statusEl.classList.add("status-ok");
+      if (type === "error") statusEl.classList.add("status-error");
     }
 
     function setRefreshButtonLoading(isLoading) {
       const button = document.getElementById("force-refresh");
       button.disabled = isLoading;
-
-      if (isLoading) {
-        button.classList.add("loading");
-      } else {
-        button.classList.remove("loading");
-      }
+      button.classList.toggle("loading", isLoading);
     }
 
-    function pulseCard(cardEl) {
-      cardEl.classList.remove("pulse");
-      void cardEl.offsetWidth;
-      cardEl.classList.add("pulse");
+    function pulseElement(el) {
+      el.classList.remove("pulse");
+      void el.offsetWidth;
+      el.classList.add("pulse");
     }
 
     function setCard(numberId, cardId, key, value) {
@@ -466,8 +455,7 @@
       const nextValue = Number.isFinite(Number(value)) ? Number(value) : 0;
 
       if (previous[key] !== null && previous[key] !== nextValue) {
-        pulseCard(cardEl);
-        addLog("info", "Valore cambiato: " + key + " da " + previous[key] + " a " + nextValue);
+        pulseElement(cardEl);
       }
 
       previous[key] = nextValue;
@@ -478,7 +466,6 @@
       const countdownEl = document.getElementById("countdown");
       const remainingMs = Math.max(0, nextRefreshAt - Date.now());
       const remainingSeconds = Math.ceil(remainingMs / 1000);
-
       countdownEl.textContent = "Prossimo aggiornamento tra " + remainingSeconds + " secondi";
     }
 
@@ -497,17 +484,13 @@
     }
 
     function forceRefresh() {
-      if (isRefreshing) {
-        addLog("info", "Aggiornamento gia in corso, richiesta manuale ignorata");
-        return;
-      }
+      if (isRefreshing) return;
 
       if (refreshTimer) {
         window.clearTimeout(refreshTimer);
         refreshTimer = null;
       }
 
-      addLog("info", "Aggiornamento manuale richiesto");
       aggiornaDashboard("manuale");
     }
 
@@ -525,63 +508,179 @@
       }
     }
 
-    async function aggiornaDashboard(source) {
-      if (isRefreshing) {
+    function groupTasksByTicket(tasks) {
+      const groups = new Map();
+
+      if (!Array.isArray(tasks)) {
+        return groups;
+      }
+
+      for (const task of tasks) {
+        const ticketKey = String(task.ticketId);
+
+        if (!groups.has(ticketKey)) {
+          groups.set(ticketKey, {
+            ticketId: task.ticketId,
+            ticketTitle: task.ticketTitle,
+            ticketUrl: task.ticketUrl,
+            tasks: []
+          });
+        }
+
+        groups.get(ticketKey).tasks.push(task);
+      }
+
+      return groups;
+    }
+
+    function getTaskIdsByTicket(groups) {
+      const taskIdsByTicket = new Map();
+
+      for (const [ticketKey, group] of groups.entries()) {
+        taskIdsByTicket.set(
+          ticketKey,
+          new Set(
+            group.tasks.map(function (task) {
+              return String(task.taskId);
+            })
+          )
+        );
+      }
+
+      return taskIdsByTicket;
+    }
+
+    function getTicketsWithNewTasks(nextTaskIdsByTicket) {
+      const ticketsWithNewTasks = new Set();
+
+      if (previous.chiamateTaskIdsByTicket === null) {
+        return ticketsWithNewTasks;
+      }
+
+      for (const [ticketKey, nextTaskIds] of nextTaskIdsByTicket.entries()) {
+        const previousTaskIds = previous.chiamateTaskIdsByTicket.get(ticketKey) || new Set();
+
+        for (const taskId of nextTaskIds.values()) {
+          if (!previousTaskIds.has(taskId)) {
+            ticketsWithNewTasks.add(ticketKey);
+            break;
+          }
+        }
+      }
+
+      return ticketsWithNewTasks;
+    }
+
+    function renderChiamateTasks(tasks) {
+      const container = document.getElementById("tasks-chiamate");
+      const groups = groupTasksByTicket(tasks);
+      const nextTaskIdsByTicket = getTaskIdsByTicket(groups);
+      const ticketsWithNewTasks = getTicketsWithNewTasks(nextTaskIdsByTicket);
+
+      container.innerHTML = "";
+
+      if (groups.size === 0) {
+        container.innerHTML = '<div class="empty">Nessuna attività trovata</div>';
+        previous.chiamateTaskIdsByTicket = nextTaskIdsByTicket;
         return;
       }
+
+      for (const [ticketKey, group] of groups.entries()) {
+        const groupEl = document.createElement("div");
+        groupEl.className = "ticket-task-group";
+
+        const header = document.createElement("div");
+        header.className = "ticket-group-header";
+
+        const link = document.createElement("a");
+        link.className = "ticket-group-link";
+        link.href = group.ticketUrl;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = "#" + group.ticketId + " - " + group.ticketTitle;
+
+        header.appendChild(link);
+        groupEl.appendChild(header);
+
+        for (const task of group.tasks) {
+          const taskRow = document.createElement("div");
+          taskRow.className = "task-row";
+
+          const meta = document.createElement("div");
+          meta.className = "task-meta";
+          meta.textContent = "Task #" + task.taskId + " · " + (task.taskDate || "data sconosciuta");
+
+          const content = document.createElement("div");
+          content.className = "task-content";
+          content.textContent = task.content || "(senza contenuto)";
+
+          taskRow.appendChild(meta);
+          taskRow.appendChild(content);
+          groupEl.appendChild(taskRow);
+        }
+
+        container.appendChild(groupEl);
+
+        if (ticketsWithNewTasks.has(ticketKey)) {
+          pulseElement(groupEl);
+        }
+      }
+
+      previous.chiamateTaskIdsByTicket = nextTaskIdsByTicket;
+    }
+
+    async function aggiornaDashboard(source) {
+      if (isRefreshing) return;
 
       isRefreshing = true;
       setRefreshButtonLoading(true);
 
-      const startedAt = Date.now();
-      const refreshSource = source || "automatico";
-
       try {
         setStatus("Aggiornamento in corso...", "info");
-        addLog("info", "Richiesta dati a /api/stats (" + refreshSource + ")");
 
-        const response = await fetch("/api/stats?ts=" + Date.now(), {
+        const statsResponse = await fetch("/api/stats?ts=" + Date.now(), {
           method: "GET",
           cache: "no-store"
         });
 
-        if (!response.ok) {
-          const details = await readErrorDetails(response);
+        if (!statsResponse.ok) {
+          const details = await readErrorDetails(statsResponse);
           throw {
-            message: "HTTP " + response.status + " " + response.statusText,
+            message: "HTTP " + statsResponse.status + " " + statsResponse.statusText,
             details: details
           };
         }
 
-        const data = await response.json();
+        const stats = await statsResponse.json();
 
-        setCard("totali-aperti", "card-totali-aperti", "totaleAperti", data.totaleTicketAperti);
-        setCard("nuovi-incidenti", "card-nuovi-incidenti", "nuoviIncidenti", data.nuoviIncidenti);
-        setCard("nuove-richieste", "card-nuove-richieste", "nuoveRichieste", data.nuoveRichieste);
-        setCard("assegnati-a-me", "card-assegnati-a-me", "assegnatiAMe", data.assegnatiAMe);
+        setCard("totali-aperti", "card-totali-aperti", "totaleAperti", stats.totaleTicketAperti);
+        setCard("nuovi-incidenti", "card-nuovi-incidenti", "nuoviIncidenti", stats.nuoviIncidenti);
+        setCard("nuove-richieste", "card-nuove-richieste", "nuoveRichieste", stats.nuoveRichieste);
+        setCard("assegnati-a-me", "card-assegnati-a-me", "assegnatiAMe", stats.assegnatiAMe);
 
-        const elapsedMs = Date.now() - startedAt;
-        const totalTickets = Number.isFinite(Number(data.totaleTicketAperti)) ? data.totaleTicketAperti : "?";
+        const tasksResponse = await fetch("/api/tasks?ts=" + Date.now(), {
+          method: "GET",
+          cache: "no-store"
+        });
 
-        setStatus("Aggiornato alle " + (data.aggiornatoAlle || nowText()), "ok");
+        if (!tasksResponse.ok) {
+          const details = await readErrorDetails(tasksResponse);
+          throw {
+            message: "HTTP " + tasksResponse.status + " " + tasksResponse.statusText,
+            details: details
+          };
+        }
 
-        addLog(
-          "ok",
-          "Aggiornamento completato in " + elapsedMs + " ms. Ticket aperti analizzati: " + totalTickets,
-          {
-            totaliAperti: data.totaleTicketAperti,
-            nuoviIncidenti: data.nuoviIncidenti,
-            nuoveRichieste: data.nuoveRichieste,
-            assegnatiAMe: data.assegnatiAMe
-          }
-        );
+        const tasks = await tasksResponse.json();
+
+        renderChiamateTasks(tasks.chiamate);
+
+        setStatus("Aggiornato alle " + (stats.aggiornatoAlle || nowText()), "ok");
       }
       catch (error) {
         const message = error && error.message ? error.message : String(error);
-        const details = error && error.details ? error.details : null;
-
+        console.error("Errore aggiornamento dashboard", error);
         setStatus("Errore aggiornamento: " + message, "error");
-        addLog("error", "Errore aggiornamento dashboard: " + message, details);
       }
       finally {
         isRefreshing = false;
@@ -591,22 +690,17 @@
     }
 
     window.addEventListener("error", function (event) {
-      addLog("error", "Errore JavaScript: " + event.message, {
-        file: event.filename,
-        line: event.lineno,
-        column: event.colno
-      });
+      console.error("Errore JavaScript:", event.message, event);
     });
 
     window.addEventListener("unhandledrejection", function (event) {
-      addLog("error", "Promise non gestita", String(event.reason));
+      console.error("Promise non gestita:", event.reason);
     });
 
     document.getElementById("force-refresh").addEventListener("click", forceRefresh);
 
     window.setInterval(updateCountdown, 500);
 
-    addLog("info", "Dashboard caricata");
     aggiornaDashboard("iniziale");
   </script>
 </body>
