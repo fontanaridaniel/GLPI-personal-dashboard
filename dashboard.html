@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard GLPI</title>
+
+  <style>
+    :root {
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f5f6f8;
+      color: #111827;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #f5f6f8;
+    }
+
+    .dashboard {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      padding-top: 32px;
+    }
+
+    .wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      padding: 0 16px;
+    }
+
+    .topbar {
+      width: min(888px, 100%);
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-area {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 3px;
+      font-size: 13px;
+      color: #6b7280;
+      text-align: right;
+      min-height: 36px;
+    }
+
+    .status-ok {
+      color: #047857;
+    }
+
+    .status-error {
+      color: #b91c1c;
+      font-weight: 700;
+    }
+
+    .refresh-button {
+      width: 38px;
+      height: 38px;
+      border: 1px solid #d1d5db;
+      border-radius: 12px;
+      background: #ffffff;
+      color: #111827;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+      transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
+    }
+
+    .refresh-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+      background: #111827;
+      color: #ffffff;
+    }
+
+    .refresh-button:active {
+      transform: translateY(0);
+      box-shadow: 0 5px 14px rgba(15, 23, 42, 0.10);
+    }
+
+    .refresh-button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .refresh-button.loading svg {
+      animation: spin 900ms linear infinite;
+    }
+
+    @keyframes spin {
+      from {
+        transform: rotate(0deg);
+      }
+
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .cards {
+      display: flex;
+      flex-direction: row;
+      justify-content: center;
+      align-items: stretch;
+      gap: 16px;
+    }
+
+    .card {
+      width: 210px;
+      min-height: 120px;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 18px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease, border-color 180ms ease;
+    }
+
+    .card.pulse {
+      animation: cardInvertPulse 2.4s ease-in-out;
+    }
+
+    .card.pulse .title,
+    .card.pulse .number {
+      animation: cardTextPulse 2.4s ease-in-out;
+    }
+
+    @keyframes cardInvertPulse {
+      0% {
+        background: #ffffff;
+        border-color: #e5e7eb;
+        transform: translateY(0);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      }
+
+      12% {
+        background: #111827;
+        border-color: #111827;
+        transform: translateY(-4px) scale(1.015);
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
+      }
+
+      24% {
+        background: #ffffff;
+        border-color: #e5e7eb;
+        transform: translateY(0) scale(1);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      }
+
+      38% {
+        background: #111827;
+        border-color: #111827;
+        transform: translateY(-4px) scale(1.015);
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
+      }
+
+      50% {
+        background: #ffffff;
+        border-color: #e5e7eb;
+        transform: translateY(0) scale(1);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      }
+
+      64% {
+        background: #111827;
+        border-color: #111827;
+        transform: translateY(-4px) scale(1.015);
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
+      }
+
+      100% {
+        background: #ffffff;
+        border-color: #e5e7eb;
+        transform: translateY(0) scale(1);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      }
+    }
+
+    @keyframes cardTextPulse {
+      0% {
+        color: inherit;
+      }
+
+      12% {
+        color: #ffffff;
+      }
+
+      24% {
+        color: inherit;
+      }
+
+      38% {
+        color: #ffffff;
+      }
+
+      50% {
+        color: inherit;
+      }
+
+      64% {
+        color: #ffffff;
+      }
+
+      100% {
+        color: inherit;
+      }
+    }
+
+    .title {
+      font-size: 13px;
+      line-height: 1.2;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #6b7280;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    .number {
+      font-size: 46px;
+      line-height: 1;
+      font-weight: 800;
+      color: #111827;
+    }
+
+    .log-panel {
+      width: min(888px, 100%);
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+      overflow: hidden;
+      margin-top: 4px;
+    }
+
+    .log-title {
+      padding: 10px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #6b7280;
+      border-bottom: 1px solid #e5e7eb;
+      background: #fafafa;
+    }
+
+    .log-list {
+      max-height: 190px;
+      overflow: auto;
+      padding: 8px 14px;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #374151;
+    }
+
+    .log-row {
+      padding: 4px 0;
+      border-bottom: 1px dashed #f0f0f0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .log-row:last-child {
+      border-bottom: none;
+    }
+
+    .log-info {
+      color: #374151;
+    }
+
+    .log-ok {
+      color: #047857;
+    }
+
+    .log-error {
+      color: #b91c1c;
+    }
+
+    @media (max-width: 940px) {
+      .topbar,
+      .log-panel {
+        width: min(436px, 100%);
+      }
+
+      .cards {
+        flex-wrap: wrap;
+        width: min(436px, 100%);
+      }
+    }
+
+    @media (max-width: 500px) {
+      .topbar {
+        align-items: flex-start;
+      }
+
+      .cards {
+        flex-direction: column;
+        width: 100%;
+      }
+
+      .card {
+        width: 100%;
+      }
+
+      .log-panel {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="dashboard">
+    <div class="wrap">
+      <div class="topbar">
+        <div class="status-area">
+          <div id="status">Avvio dashboard...</div>
+          <div id="countdown">Prossimo aggiornamento tra 60 secondi</div>
+        </div>
+
+        <button class="refresh-button" id="force-refresh" type="button" aria-label="Aggiorna ora" title="Aggiorna ora">
+          <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"/>
+          </svg>
+        </button>
+      </div>
+
+      <section class="cards" aria-label="Stato ticket">
+        <article class="card" id="card-totali-aperti">
+          <div class="title">Totali aperti</div>
+          <div class="number" id="totali-aperti">0</div>
+        </article>
+
+        <article class="card" id="card-nuovi-incidenti">
+          <div class="title">Nuovi incidenti</div>
+          <div class="number" id="nuovi-incidenti">0</div>
+        </article>
+
+        <article class="card" id="card-nuove-richieste">
+          <div class="title">Nuove richieste</div>
+          <div class="number" id="nuove-richieste">0</div>
+        </article>
+
+        <article class="card" id="card-assegnati-a-me">
+          <div class="title">Assegnati a me</div>
+          <div class="number" id="assegnati-a-me">0</div>
+        </article>
+      </section>
+
+      <section class="log-panel" aria-label="Log dashboard">
+        <div class="log-title">Log dashboard</div>
+        <div class="log-list" id="log-list"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const REFRESH_SECONDS = 60;
+    const REFRESH_MS = REFRESH_SECONDS * 1000;
+    const MAX_LOG_ROWS = 12;
+
+    let nextRefreshAt = Date.now() + REFRESH_MS;
+    let refreshTimer = null;
+    let isRefreshing = false;
+
+    const previous = {
+      totaleAperti: null,
+      nuoviIncidenti: null,
+      nuoveRichieste: null,
+      assegnatiAMe: null
+    };
+
+    function nowText() {
+      return new Date().toLocaleTimeString("it-IT", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+    }
+
+    function addLog(level, message, details) {
+      const logList = document.getElementById("log-list");
+      const row = document.createElement("div");
+
+      row.className = "log-row log-" + level;
+
+      let text = "[" + nowText() + "] " + message;
+
+      if (details) {
+        if (typeof details === "string") {
+          text += "\n" + details;
+        } else {
+          text += "\n" + JSON.stringify(details, null, 2);
+        }
+      }
+
+      row.textContent = text;
+      logList.prepend(row);
+
+      while (logList.children.length > MAX_LOG_ROWS) {
+        logList.removeChild(logList.lastChild);
+      }
+
+      if (level === "error") {
+        console.error(message, details || "");
+      } else {
+        console.log(message, details || "");
+      }
+    }
+
+    function setStatus(message, type) {
+      const statusEl = document.getElementById("status");
+      statusEl.textContent = message;
+      statusEl.className = "";
+
+      if (type === "ok") {
+        statusEl.classList.add("status-ok");
+      }
+
+      if (type === "error") {
+        statusEl.classList.add("status-error");
+      }
+    }
+
+    function setRefreshButtonLoading(isLoading) {
+      const button = document.getElementById("force-refresh");
+      button.disabled = isLoading;
+
+      if (isLoading) {
+        button.classList.add("loading");
+      } else {
+        button.classList.remove("loading");
+      }
+    }
+
+    function pulseCard(cardEl) {
+      cardEl.classList.remove("pulse");
+      void cardEl.offsetWidth;
+      cardEl.classList.add("pulse");
+    }
+
+    function setCard(numberId, cardId, key, value) {
+      const numberEl = document.getElementById(numberId);
+      const cardEl = document.getElementById(cardId);
+      const nextValue = Number.isFinite(Number(value)) ? Number(value) : 0;
+
+      if (previous[key] !== null && previous[key] !== nextValue) {
+        pulseCard(cardEl);
+        addLog("info", "Valore cambiato: " + key + " da " + previous[key] + " a " + nextValue);
+      }
+
+      previous[key] = nextValue;
+      numberEl.textContent = String(nextValue);
+    }
+
+    function updateCountdown() {
+      const countdownEl = document.getElementById("countdown");
+      const remainingMs = Math.max(0, nextRefreshAt - Date.now());
+      const remainingSeconds = Math.ceil(remainingMs / 1000);
+
+      countdownEl.textContent = "Prossimo aggiornamento tra " + remainingSeconds + " secondi";
+    }
+
+    function scheduleNextRefresh() {
+      nextRefreshAt = Date.now() + REFRESH_MS;
+
+      if (refreshTimer) {
+        window.clearTimeout(refreshTimer);
+      }
+
+      refreshTimer = window.setTimeout(function () {
+        aggiornaDashboard("timer");
+      }, REFRESH_MS);
+
+      updateCountdown();
+    }
+
+    function forceRefresh() {
+      if (isRefreshing) {
+        addLog("info", "Aggiornamento gia in corso, richiesta manuale ignorata");
+        return;
+      }
+
+      if (refreshTimer) {
+        window.clearTimeout(refreshTimer);
+        refreshTimer = null;
+      }
+
+      addLog("info", "Aggiornamento manuale richiesto");
+      aggiornaDashboard("manuale");
+    }
+
+    async function readErrorDetails(response) {
+      const contentType = response.headers.get("content-type") || "";
+
+      try {
+        if (contentType.includes("application/json")) {
+          return await response.json();
+        }
+
+        return await response.text();
+      } catch (error) {
+        return "Impossibile leggere il dettaglio errore: " + error.message;
+      }
+    }
+
+    async function aggiornaDashboard(source) {
+      if (isRefreshing) {
+        return;
+      }
+
+      isRefreshing = true;
+      setRefreshButtonLoading(true);
+
+      const startedAt = Date.now();
+      const refreshSource = source || "automatico";
+
+      try {
+        setStatus("Aggiornamento in corso...", "info");
+        addLog("info", "Richiesta dati a /api/stats (" + refreshSource + ")");
+
+        const response = await fetch("/api/stats?ts=" + Date.now(), {
+          method: "GET",
+          cache: "no-store"
+        });
+
+        if (!response.ok) {
+          const details = await readErrorDetails(response);
+          throw {
+            message: "HTTP " + response.status + " " + response.statusText,
+            details: details
+          };
+        }
+
+        const data = await response.json();
+
+        setCard("totali-aperti", "card-totali-aperti", "totaleAperti", data.totaleTicketAperti);
+        setCard("nuovi-incidenti", "card-nuovi-incidenti", "nuoviIncidenti", data.nuoviIncidenti);
+        setCard("nuove-richieste", "card-nuove-richieste", "nuoveRichieste", data.nuoveRichieste);
+        setCard("assegnati-a-me", "card-assegnati-a-me", "assegnatiAMe", data.assegnatiAMe);
+
+        const elapsedMs = Date.now() - startedAt;
+        const totalTickets = Number.isFinite(Number(data.totaleTicketAperti)) ? data.totaleTicketAperti : "?";
+
+        setStatus("Aggiornato alle " + (data.aggiornatoAlle || nowText()), "ok");
+
+        addLog(
+          "ok",
+          "Aggiornamento completato in " + elapsedMs + " ms. Ticket aperti analizzati: " + totalTickets,
+          {
+            totaliAperti: data.totaleTicketAperti,
+            nuoviIncidenti: data.nuoviIncidenti,
+            nuoveRichieste: data.nuoveRichieste,
+            assegnatiAMe: data.assegnatiAMe
+          }
+        );
+      }
+      catch (error) {
+        const message = error && error.message ? error.message : String(error);
+        const details = error && error.details ? error.details : null;
+
+        setStatus("Errore aggiornamento: " + message, "error");
+        addLog("error", "Errore aggiornamento dashboard: " + message, details);
+      }
+      finally {
+        isRefreshing = false;
+        setRefreshButtonLoading(false);
+        scheduleNextRefresh();
+      }
+    }
+
+    window.addEventListener("error", function (event) {
+      addLog("error", "Errore JavaScript: " + event.message, {
+        file: event.filename,
+        line: event.lineno,
+        column: event.colno
+      });
+    });
+
+    window.addEventListener("unhandledrejection", function (event) {
+      addLog("error", "Promise non gestita", String(event.reason));
+    });
+
+    document.getElementById("force-refresh").addEventListener("click", forceRefresh);
+
+    window.setInterval(updateCountdown, 500);
+
+    addLog("info", "Dashboard caricata");
+    aggiornaDashboard("iniziale");
+  </script>
+</body>
+</html>
