@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Elenco GLPI</title>
+
+  <style>
+    :root {
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f5f6f8;
+      color: #111827;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #f5f6f8;
+    }
+
+    .page {
+      width: 100%;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 32px 16px 24px;
+    }
+
+    .wrap {
+      width: min(1120px, 100%);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .topbar {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .title-area {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .back-link {
+      width: fit-content;
+      color: #6b7280;
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .back-link:hover { color: #111827; text-decoration: underline; }
+
+    .page-title {
+      margin: 0;
+      color: #111827;
+      font-size: clamp(22px, 3vw, 30px);
+      line-height: 1.1;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .refresh-area {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .status-area {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 3px;
+      min-height: 36px;
+      color: #6b7280;
+      font-size: 13px;
+      text-align: right;
+    }
+
+    .status-ok { color: #047857; }
+    .status-error { color: #b91c1c; font-weight: 700; }
+
+    .refresh-button {
+      width: 38px;
+      height: 38px;
+      border: 1px solid #d1d5db;
+      border-radius: 12px;
+      background: #ffffff;
+      color: #111827;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+      transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
+    }
+
+    .refresh-button:hover {
+      transform: translateY(-1px);
+      background: #111827;
+      color: #ffffff;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+    }
+
+    .refresh-button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+    .refresh-button.loading svg { animation: spin 900ms linear infinite; }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .list-card {
+      width: 100%;
+      overflow: hidden;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.07);
+    }
+
+    .list-card-header {
+      min-height: 44px;
+      padding: 12px 16px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #fafafa;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .list-label {
+      color: #6b7280;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .count-badge {
+      min-width: 30px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #111827;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 800;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .table-wrap { width: 100%; overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 720px;
+    }
+
+    th,
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid #eef0f3;
+      text-align: left;
+      vertical-align: middle;
+      font-size: 13px;
+    }
+
+    th {
+      background: #ffffff;
+      color: #6b7280;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: #fafafa; }
+
+    .id-cell {
+      width: 88px;
+      color: #6b7280;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .title-link {
+      color: #111827;
+      font-weight: 800;
+      text-decoration: none;
+    }
+
+    .title-link:hover { text-decoration: underline; }
+    .secondary { color: #6b7280; }
+
+    .empty,
+    .loading {
+      padding: 30px 18px;
+      color: #6b7280;
+      font-size: 14px;
+      text-align: center;
+    }
+
+    @media (max-width: 650px) {
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .refresh-area { width: 100%; justify-content: space-between; }
+      .status-area { align-items: flex-start; text-align: left; }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="page">
+    <div class="wrap">
+      <header class="topbar">
+        <div class="title-area">
+          <a class="back-link" href="/">← Personal GLPI Dashboard</a>
+          <h1 class="page-title" id="page-title">Elenco GLPI</h1>
+        </div>
+
+        <div class="refresh-area">
+          <div class="status-area">
+            <div id="status">Caricamento...</div>
+            <div id="countdown">Preparazione aggiornamento...</div>
+          </div>
+
+          <button class="refresh-button" id="force-refresh" type="button" aria-label="Aggiorna ora" title="Aggiorna ora">
+            <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="list-card">
+        <div class="list-card-header">
+          <span class="list-label" id="list-label">Elementi</span>
+          <span class="count-badge" id="item-count">0</span>
+        </div>
+
+        <div class="table-wrap" id="table-container">
+          <div class="loading">Caricamento elenco...</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const configuredRefreshSeconds = Number("__AUTO_REFRESH_SECONDS__");
+    const REFRESH_SECONDS = Number.isFinite(configuredRefreshSeconds) && configuredRefreshSeconds >= 10
+      ? configuredRefreshSeconds
+      : 60;
+    const REFRESH_MS = REFRESH_SECONDS * 1000;
+
+    const VIEW_CONFIG = {
+      "totali-aperti": { title: "Totali aperti", label: "Ticket aperti" },
+      "nuovi-incidenti": { title: "Nuovi incidenti", label: "Ticket filtrati" },
+      "nuove-richieste": { title: "Nuove richieste", label: "Ticket filtrati" },
+      "assegnati-a-me": { title: "Assegnati a me", label: "Ticket assegnati" },
+      "chiamate": { title: "Attività chiamate", label: "Ticket aperti" },
+      "problemi": { title: "Attività problemi", label: "Problemi aperti" },
+      "cambiamenti": { title: "Attività cambiamenti", label: "Cambiamenti aperti" }
+    };
+
+    const view = window.location.pathname.split("/").filter(Boolean).pop() || "totali-aperti";
+    const config = VIEW_CONFIG[view] || VIEW_CONFIG["totali-aperti"];
+
+    let nextRefreshAt = Date.now() + REFRESH_MS;
+    let refreshTimer = null;
+    let isRefreshing = false;
+
+    document.title = config.title + " · Personal GLPI Dashboard";
+    document.getElementById("page-title").textContent = config.title;
+    document.getElementById("list-label").textContent = config.label;
+
+    function nowText() {
+      return new Date().toLocaleTimeString("it-IT", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+    }
+
+    function setStatus(message, type) {
+      const element = document.getElementById("status");
+      element.textContent = message;
+      element.className = "";
+      if (type === "ok") element.classList.add("status-ok");
+      if (type === "error") element.classList.add("status-error");
+    }
+
+    function setButtonLoading(isLoading) {
+      const button = document.getElementById("force-refresh");
+      button.disabled = isLoading;
+      button.classList.toggle("loading", isLoading);
+    }
+
+    function updateCountdown() {
+      const remainingSeconds = Math.ceil(Math.max(0, nextRefreshAt - Date.now()) / 1000);
+      document.getElementById("countdown").textContent =
+        "Prossimo aggiornamento tra " + remainingSeconds + " secondi";
+    }
+
+    function scheduleNextRefresh() {
+      nextRefreshAt = Date.now() + REFRESH_MS;
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => refreshList("timer"), REFRESH_MS);
+      updateCountdown();
+    }
+
+    function forceRefresh() {
+      if (isRefreshing) return;
+      if (refreshTimer) {
+        window.clearTimeout(refreshTimer);
+        refreshTimer = null;
+      }
+      refreshList("manuale");
+    }
+
+    function renderRows(items) {
+      const container = document.getElementById("table-container");
+      document.getElementById("item-count").textContent = String(items.length);
+
+      if (!items.length) {
+        container.innerHTML = '<div class="empty">Nessun elemento trovato</div>';
+        return;
+      }
+
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const tbody = document.createElement("tbody");
+
+      const headerRow = document.createElement("tr");
+      ["ID", "Titolo", "Stato", "Tipo", "Aggiornato"].forEach(label => {
+        const th = document.createElement("th");
+        th.textContent = label;
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+
+      for (const item of items) {
+        const row = document.createElement("tr");
+
+        const idCell = document.createElement("td");
+        idCell.className = "id-cell";
+        idCell.textContent = "#" + item.id;
+
+        const titleCell = document.createElement("td");
+        const link = document.createElement("a");
+        link.className = "title-link";
+        link.href = item.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = item.title || "(senza titolo)";
+        titleCell.appendChild(link);
+
+        const statusCell = document.createElement("td");
+        statusCell.className = "secondary";
+        statusCell.textContent = item.status || "-";
+
+        const typeCell = document.createElement("td");
+        typeCell.className = "secondary";
+        typeCell.textContent = item.type || "-";
+
+        const dateCell = document.createElement("td");
+        dateCell.className = "secondary";
+        dateCell.textContent = item.updatedAt || "-";
+
+        row.appendChild(idCell);
+        row.appendChild(titleCell);
+        row.appendChild(statusCell);
+        row.appendChild(typeCell);
+        row.appendChild(dateCell);
+        tbody.appendChild(row);
+      }
+
+      table.appendChild(thead);
+      table.appendChild(tbody);
+      container.innerHTML = "";
+      container.appendChild(table);
+    }
+
+    async function refreshList(source) {
+      if (isRefreshing) return;
+
+      isRefreshing = true;
+      setButtonLoading(true);
+      setStatus("Aggiornamento in corso...", "info");
+
+      try {
+        const response = await fetch("/api/list?view=" + encodeURIComponent(view) + "&ts=" + Date.now(), {
+          method: "GET",
+          cache: "no-store"
+        });
+
+        if (!response.ok) {
+          throw new Error("HTTP " + response.status + " " + response.statusText);
+        }
+
+        const data = await response.json();
+        renderRows(Array.isArray(data.items) ? data.items : []);
+        setStatus("Aggiornato alle " + (data.aggiornatoAlle || nowText()), "ok");
+      } catch (error) {
+        console.error("Errore elenco", error);
+        setStatus("Errore aggiornamento: " + (error.message || String(error)), "error");
+      } finally {
+        isRefreshing = false;
+        setButtonLoading(false);
+        scheduleNextRefresh();
+      }
+    }
+
+    document.getElementById("force-refresh").addEventListener("click", forceRefresh);
+    window.setInterval(updateCountdown, 500);
+    refreshList("iniziale");
+  </script>
+</body>
+</html>

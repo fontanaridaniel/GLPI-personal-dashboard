@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dashboard GLPI</title>
+  <title>Personal GLPI Dashboard</title>
 
   <style>
     :root {
@@ -12,15 +12,15 @@
       color: #111827;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
       min-height: 100vh;
       background: #f5f6f8;
     }
+
+    a { color: inherit; }
 
     .dashboard {
       width: 100%;
@@ -42,8 +42,24 @@
     .topbar {
       width: 100%;
       display: flex;
-      justify-content: flex-end;
       align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .page-title {
+      margin: 0;
+      color: #111827;
+      font-size: clamp(22px, 3vw, 30px);
+      line-height: 1.1;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .refresh-area {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
       gap: 10px;
     }
 
@@ -58,14 +74,8 @@
       text-align: right;
     }
 
-    .status-ok {
-      color: #047857;
-    }
-
-    .status-error {
-      color: #b91c1c;
-      font-weight: 700;
-    }
+    .status-ok { color: #047857; }
+    .status-error { color: #b91c1c; font-weight: 700; }
 
     .refresh-button {
       width: 38px;
@@ -79,11 +89,7 @@
       justify-content: center;
       cursor: pointer;
       box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
-      transition:
-        transform 160ms ease,
-        box-shadow 160ms ease,
-        background 160ms ease,
-        color 160ms ease;
+      transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
     }
 
     .refresh-button:hover {
@@ -93,28 +99,17 @@
       box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
     }
 
-    .refresh-button:active {
-      transform: translateY(0);
-    }
-
     .refresh-button:disabled {
       opacity: 0.55;
       cursor: not-allowed;
       transform: none;
     }
 
-    .refresh-button.loading svg {
-      animation: spin 900ms linear infinite;
-    }
+    .refresh-button.loading svg { animation: spin 900ms linear infinite; }
 
     @keyframes spin {
-      from {
-        transform: rotate(0deg);
-      }
-
-      to {
-        transform: rotate(360deg);
-      }
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
 
     .cards {
@@ -122,6 +117,12 @@
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 16px;
+    }
+
+    .card-link {
+      min-width: 0;
+      text-decoration: none;
+      border-radius: 18px;
     }
 
     .card {
@@ -135,36 +136,31 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      transition:
-        transform 180ms ease,
-        box-shadow 180ms ease,
-        background-color 180ms ease,
-        border-color 180ms ease;
+      transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease, border-color 180ms ease;
     }
 
-    .card.pulse {
-      animation: card-invert-pulse 2.4s ease-in-out;
+    .card-link:hover .card {
+      transform: translateY(-3px);
+      box-shadow: 0 14px 32px rgba(15, 23, 42, 0.13);
     }
 
+    .card-link:focus-visible {
+      outline: 3px solid rgba(17, 24, 39, 0.22);
+      outline-offset: 3px;
+    }
+
+    .card.pulse { animation: card-invert-pulse 2.4s ease-in-out; }
     .card.pulse .stat-title,
-    .card.pulse .stat-number {
-      animation: card-text-pulse 2.4s ease-in-out;
-    }
+    .card.pulse .stat-number { animation: card-text-pulse 2.4s ease-in-out; }
 
     @keyframes card-invert-pulse {
-      0%,
-      24%,
-      50%,
-      100% {
+      0%, 24%, 50%, 100% {
         background: #ffffff;
         border-color: #e5e7eb;
         transform: translateY(0) scale(1);
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
       }
-
-      12%,
-      38%,
-      64% {
+      12%, 38%, 64% {
         background: #111827;
         border-color: #111827;
         transform: translateY(-4px) scale(1.015);
@@ -173,18 +169,8 @@
     }
 
     @keyframes card-text-pulse {
-      0%,
-      24%,
-      50%,
-      100% {
-        color: inherit;
-      }
-
-      12%,
-      38%,
-      64% {
-        color: #ffffff;
-      }
+      0%, 24%, 50%, 100% { color: inherit; }
+      12%, 38%, 64% { color: #ffffff; }
     }
 
     .stat-title {
@@ -242,16 +228,16 @@
       gap: 12px;
     }
 
-    .activity-title-label {
+    .activity-title-link {
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      text-decoration: none;
     }
 
-    .activity-title-total {
-      font-variant-numeric: tabular-nums;
-    }
+    .activity-title-link:hover { color: #111827; text-decoration: underline; }
+    .activity-title-total { font-variant-numeric: tabular-nums; }
 
     .activity-progress {
       flex: 0 0 auto;
@@ -267,15 +253,8 @@
       font-variant-numeric: tabular-nums;
     }
 
-    .activity-progress[hidden] {
-      display: none;
-    }
-
-    .activity-progress svg {
-      width: 14px;
-      height: 14px;
-      animation: spin 850ms linear infinite;
-    }
+    .activity-progress[hidden] { display: none; }
+    .activity-progress svg { width: 14px; height: 14px; animation: spin 850ms linear infinite; }
 
     .activity-list {
       flex: 1;
@@ -287,27 +266,17 @@
       gap: 10px;
     }
 
-    .empty {
-      padding: 6px 0;
-      color: #6b7280;
-      font-size: 13px;
-    }
+    .empty { padding: 6px 0; color: #6b7280; font-size: 13px; }
 
     .parent-task-group {
       border: 1px solid #e5e7eb;
       border-radius: 12px;
       background: #ffffff;
       overflow: hidden;
-      transition:
-        transform 180ms ease,
-        box-shadow 180ms ease,
-        background-color 180ms ease,
-        border-color 180ms ease;
+      transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease, border-color 180ms ease;
     }
 
-    .parent-task-group.pulse {
-      animation: group-invert-pulse 2.4s ease-in-out;
-    }
+    .parent-task-group.pulse { animation: group-invert-pulse 2.4s ease-in-out; }
 
     .parent-task-group.pulse .parent-group-header,
     .parent-task-group.pulse .parent-group-link,
@@ -318,27 +287,19 @@
     }
 
     .parent-task-group.pulse .task-row {
-      animation-name:
-        group-text-pulse,
-        task-row-border-pulse;
+      animation-name: group-text-pulse, task-row-border-pulse;
       animation-duration: 2.4s, 2.4s;
       animation-timing-function: ease-in-out, ease-in-out;
     }
 
     @keyframes group-invert-pulse {
-      0%,
-      24%,
-      50%,
-      100% {
+      0%, 24%, 50%, 100% {
         background: #ffffff;
         border-color: #e5e7eb;
         transform: translateY(0) scale(1);
         box-shadow: none;
       }
-
-      12%,
-      38%,
-      64% {
+      12%, 38%, 64% {
         background: #111827;
         border-color: #111827;
         transform: translateY(-4px) scale(1.01);
@@ -347,33 +308,13 @@
     }
 
     @keyframes group-text-pulse {
-      0%,
-      24%,
-      50%,
-      100% {
-        color: inherit;
-      }
-
-      12%,
-      38%,
-      64% {
-        color: #ffffff;
-      }
+      0%, 24%, 50%, 100% { color: inherit; }
+      12%, 38%, 64% { color: #ffffff; }
     }
 
     @keyframes task-row-border-pulse {
-      0%,
-      24%,
-      50%,
-      100% {
-        border-top-color: #e5e7eb;
-      }
-
-      12%,
-      38%,
-      64% {
-        border-top-color: #4b5563;
-      }
+      0%, 24%, 50%, 100% { border-top-color: #e5e7eb; }
+      12%, 38%, 64% { border-top-color: #4b5563; }
     }
 
     .parent-group-header {
@@ -389,25 +330,19 @@
       text-decoration: none;
     }
 
-    .parent-group-link:hover {
-      text-decoration: underline;
-    }
-
-    .task-row {
-      padding: 10px 11px;
-    }
-
-    .task-row + .task-row {
-      border-top: 1px solid #e5e7eb;
-    }
+    .parent-group-link:hover { text-decoration: underline; }
+    .task-row { padding: 10px 11px; }
+    .task-row + .task-row { border-top: 1px solid #e5e7eb; }
 
     .task-meta {
       margin-bottom: 6px;
       color: #6b7280;
       font-size: 12px;
+      font-weight: 700;
     }
 
     .task-content {
+      padding-left: 24px;
       color: #374151;
       font-size: 13px;
       line-height: 1.4;
@@ -416,23 +351,18 @@
     }
 
     @media (max-width: 940px) {
-      .cards {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+      .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .activities { grid-template-columns: 1fr; }
+    }
 
-      .activities {
-        grid-template-columns: 1fr;
-      }
+    @media (max-width: 650px) {
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .refresh-area { width: 100%; justify-content: space-between; }
+      .status-area { align-items: flex-start; text-align: left; }
     }
 
     @media (max-width: 500px) {
-      .cards {
-        grid-template-columns: 1fr;
-      }
-
-      .topbar {
-        align-items: flex-start;
-      }
+      .cards { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -440,78 +370,66 @@
 <body>
   <main class="dashboard">
     <div class="wrap">
-      <div class="topbar">
-        <div class="status-area">
-          <div id="status">Avvio dashboard...</div>
-          <div id="countdown">Preparazione aggiornamento...</div>
-        </div>
+      <header class="topbar">
+        <h1 class="page-title">Personal GLPI Dashboard</h1>
 
-        <button
-          class="refresh-button"
-          id="force-refresh"
-          type="button"
-          aria-label="Aggiorna ora"
-          title="Aggiorna ora"
-        >
-          <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"
-            />
-          </svg>
-        </button>
-      </div>
+        <div class="refresh-area">
+          <div class="status-area">
+            <div id="status">Avvio dashboard...</div>
+            <div id="countdown">Preparazione aggiornamento...</div>
+          </div>
+
+          <button class="refresh-button" id="force-refresh" type="button" aria-label="Aggiorna ora" title="Aggiorna ora">
+            <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"/>
+            </svg>
+          </button>
+        </div>
+      </header>
 
       <section class="cards" aria-label="Stato ticket">
-        <article class="card" id="card-totali-aperti">
-          <div class="stat-title">Totali aperti</div>
-          <div class="stat-number" id="totali-aperti">0</div>
-        </article>
+        <a class="card-link" href="/list/totali-aperti">
+          <article class="card" id="card-totali-aperti">
+            <div class="stat-title">Totali aperti</div>
+            <div class="stat-number" id="totali-aperti">0</div>
+          </article>
+        </a>
 
-        <article class="card" id="card-nuovi-incidenti">
-          <div class="stat-title">Nuovi incidenti</div>
-          <div class="stat-number" id="nuovi-incidenti">0</div>
-        </article>
+        <a class="card-link" href="/list/nuovi-incidenti">
+          <article class="card" id="card-nuovi-incidenti">
+            <div class="stat-title">Nuovi incidenti</div>
+            <div class="stat-number" id="nuovi-incidenti">0</div>
+          </article>
+        </a>
 
-        <article class="card" id="card-nuove-richieste">
-          <div class="stat-title">Nuove richieste</div>
-          <div class="stat-number" id="nuove-richieste">0</div>
-        </article>
+        <a class="card-link" href="/list/nuove-richieste">
+          <article class="card" id="card-nuove-richieste">
+            <div class="stat-title">Nuove richieste</div>
+            <div class="stat-number" id="nuove-richieste">0</div>
+          </article>
+        </a>
 
-        <article class="card" id="card-assegnati-a-me">
-          <div class="stat-title">Assegnati a me</div>
-          <div class="stat-number" id="assegnati-a-me">0</div>
-        </article>
+        <a class="card-link" href="/list/assegnati-a-me">
+          <article class="card" id="card-assegnati-a-me">
+            <div class="stat-title">Assegnati a me</div>
+            <div class="stat-number" id="assegnati-a-me">0</div>
+          </article>
+        </a>
       </section>
 
       <section class="activities" aria-label="Attività">
         <article class="activity-card">
           <div class="activity-title">
-            <span class="activity-title-label">
-              Attività chiamate -
-              <span
-                class="activity-title-total"
-                id="total-chiamate"
-              >0</span>
-            </span>
-
-            <span
-              class="activity-progress"
-              id="progress-chiamate"
-              aria-live="polite"
-              hidden
-            >
+            <a class="activity-title-link" href="/list/chiamate">
+              Attività chiamate - <span class="activity-title-total" id="total-chiamate">0</span>
+            </a>
+            <span class="activity-progress" id="progress-chiamate" aria-live="polite" hidden>
               <span id="progress-chiamate-text">0/0</span>
-
               <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  fill="currentColor"
-                  d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"
-                />
+                <path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"/>
               </svg>
             </span>
           </div>
-
           <div class="activity-list" id="tasks-chiamate">
             <div class="empty">Caricamento attività...</div>
           </div>
@@ -519,31 +437,16 @@
 
         <article class="activity-card">
           <div class="activity-title">
-            <span class="activity-title-label">
-              Attività problemi -
-              <span
-                class="activity-title-total"
-                id="total-problemi"
-              >0</span>
-            </span>
-
-            <span
-              class="activity-progress"
-              id="progress-problemi"
-              aria-live="polite"
-              hidden
-            >
+            <a class="activity-title-link" href="/list/problemi">
+              Attività problemi - <span class="activity-title-total" id="total-problemi">0</span>
+            </a>
+            <span class="activity-progress" id="progress-problemi" aria-live="polite" hidden>
               <span id="progress-problemi-text">0/0</span>
-
               <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  fill="currentColor"
-                  d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"
-                />
+                <path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"/>
               </svg>
             </span>
           </div>
-
           <div class="activity-list" id="tasks-problemi">
             <div class="empty">Caricamento attività...</div>
           </div>
@@ -551,31 +454,16 @@
 
         <article class="activity-card">
           <div class="activity-title">
-            <span class="activity-title-label">
-              Attività cambiamenti -
-              <span
-                class="activity-title-total"
-                id="total-cambiamenti"
-              >0</span>
-            </span>
-
-            <span
-              class="activity-progress"
-              id="progress-cambiamenti"
-              aria-live="polite"
-              hidden
-            >
+            <a class="activity-title-link" href="/list/cambiamenti">
+              Attività cambiamenti - <span class="activity-title-total" id="total-cambiamenti">0</span>
+            </a>
+            <span class="activity-progress" id="progress-cambiamenti" aria-live="polite" hidden>
               <span id="progress-cambiamenti-text">0/0</span>
-
               <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  fill="currentColor"
-                  d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"
-                />
+                <path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"/>
               </svg>
             </span>
           </div>
-
           <div class="activity-list" id="tasks-cambiamenti">
             <div class="empty">Caricamento attività...</div>
           </div>
@@ -585,16 +473,12 @@
   </main>
 
   <script>
-    const configuredRefreshSeconds =
-      Number("__AUTO_REFRESH_SECONDS__");
-
-    const REFRESH_SECONDS =
-      Number.isFinite(configuredRefreshSeconds) &&
-      configuredRefreshSeconds >= 10
-        ? configuredRefreshSeconds
-        : 60;
-
+    const configuredRefreshSeconds = Number("__AUTO_REFRESH_SECONDS__");
+    const REFRESH_SECONDS = Number.isFinite(configuredRefreshSeconds) && configuredRefreshSeconds >= 10
+      ? configuredRefreshSeconds
+      : 60;
     const REFRESH_MS = REFRESH_SECONDS * 1000;
+    const CATEGORIES = ["chiamate", "problemi", "cambiamenti"];
 
     let nextRefreshAt = Date.now() + REFRESH_MS;
     let refreshTimer = null;
@@ -621,75 +505,41 @@
     }
 
     function setStatus(message, type) {
-      const statusEl = document.getElementById("status");
-
-      statusEl.textContent = message;
-      statusEl.className = "";
-
-      if (type === "ok") {
-        statusEl.classList.add("status-ok");
-      }
-
-      if (type === "error") {
-        statusEl.classList.add("status-error");
-      }
+      const element = document.getElementById("status");
+      element.textContent = message;
+      element.className = "";
+      if (type === "ok") element.classList.add("status-ok");
+      if (type === "error") element.classList.add("status-error");
     }
 
     function setRefreshButtonLoading(isLoading) {
       const button = document.getElementById("force-refresh");
-
       button.disabled = isLoading;
       button.classList.toggle("loading", isLoading);
     }
 
     function setActivityTotals(totals) {
       const values = totals || {};
-
-      document.getElementById("total-chiamate").textContent =
-        String(Number(values.chiamate) || 0);
-
-      document.getElementById("total-problemi").textContent =
-        String(Number(values.problemi) || 0);
-
-      document.getElementById("total-cambiamenti").textContent =
-        String(Number(values.cambiamenti) || 0);
+      document.getElementById("total-chiamate").textContent = String(Number(values.chiamate) || 0);
+      document.getElementById("total-problemi").textContent = String(Number(values.problemi) || 0);
+      document.getElementById("total-cambiamenti").textContent = String(Number(values.cambiamenti) || 0);
     }
 
     function showProgress(category, completed, total) {
-      const progress = document.getElementById(
-        "progress-" + category
-      );
-
-      const text = document.getElementById(
-        "progress-" + category + "-text"
-      );
-
-      if (!progress || !text) {
-        return;
-      }
-
+      const progress = document.getElementById("progress-" + category);
+      const text = document.getElementById("progress-" + category + "-text");
+      if (!progress || !text) return;
       progress.hidden = false;
-
-      text.textContent =
-        String(Number(completed) || 0) +
-        "/" +
-        String(Number(total) || 0);
+      text.textContent = String(Number(completed) || 0) + "/" + String(Number(total) || 0);
     }
 
     function hideProgress(category) {
-      const progress = document.getElementById(
-        "progress-" + category
-      );
-
-      if (progress) {
-        progress.hidden = true;
-      }
+      const progress = document.getElementById("progress-" + category);
+      if (progress) progress.hidden = true;
     }
 
     function hideAllProgress() {
-      hideProgress("chiamate");
-      hideProgress("problemi");
-      hideProgress("cambiamenti");
+      CATEGORIES.forEach(hideProgress);
     }
 
     function pulseElement(element) {
@@ -699,164 +549,74 @@
     }
 
     function setCard(numberId, cardId, key, value) {
-      const numberEl = document.getElementById(numberId);
-      const cardEl = document.getElementById(cardId);
+      const numberElement = document.getElementById(numberId);
+      const cardElement = document.getElementById(cardId);
+      const nextValue = Number.isFinite(Number(value)) ? Number(value) : 0;
 
-      const nextValue = Number.isFinite(Number(value))
-        ? Number(value)
-        : 0;
-
-      if (
-        previous[key] !== null &&
-        previous[key] !== nextValue
-      ) {
-        pulseElement(cardEl);
+      if (previous[key] !== null && previous[key] !== nextValue) {
+        pulseElement(cardElement);
       }
 
       previous[key] = nextValue;
-      numberEl.textContent = String(nextValue);
+      numberElement.textContent = String(nextValue);
     }
 
     function applyStats(stats) {
-      if (!stats) {
-        return;
-      }
-
-      setCard(
-        "totali-aperti",
-        "card-totali-aperti",
-        "totaleAperti",
-        stats.totaleTicketAperti
-      );
-
-      setCard(
-        "nuovi-incidenti",
-        "card-nuovi-incidenti",
-        "nuoviIncidenti",
-        stats.nuoviIncidenti
-      );
-
-      setCard(
-        "nuove-richieste",
-        "card-nuove-richieste",
-        "nuoveRichieste",
-        stats.nuoveRichieste
-      );
-
-      setCard(
-        "assegnati-a-me",
-        "card-assegnati-a-me",
-        "assegnatiAMe",
-        stats.assegnatiAMe
-      );
+      if (!stats) return;
+      setCard("totali-aperti", "card-totali-aperti", "totaleAperti", stats.totaleTicketAperti);
+      setCard("nuovi-incidenti", "card-nuovi-incidenti", "nuoviIncidenti", stats.nuoviIncidenti);
+      setCard("nuove-richieste", "card-nuove-richieste", "nuoveRichieste", stats.nuoveRichieste);
+      setCard("assegnati-a-me", "card-assegnati-a-me", "assegnatiAMe", stats.assegnatiAMe);
     }
 
     function updateCountdown() {
-      const countdownEl = document.getElementById("countdown");
-
-      const remainingMs = Math.max(
-        0,
-        nextRefreshAt - Date.now()
-      );
-
-      const remainingSeconds = Math.ceil(
-        remainingMs / 1000
-      );
-
-      countdownEl.textContent =
-        "Prossimo aggiornamento tra " +
-        remainingSeconds +
-        " secondi";
+      const remainingMs = Math.max(0, nextRefreshAt - Date.now());
+      const remainingSeconds = Math.ceil(remainingMs / 1000);
+      document.getElementById("countdown").textContent =
+        "Prossimo aggiornamento tra " + remainingSeconds + " secondi";
     }
 
     function scheduleNextRefresh() {
       nextRefreshAt = Date.now() + REFRESH_MS;
-
-      if (refreshTimer) {
-        window.clearTimeout(refreshTimer);
-      }
-
-      refreshTimer = window.setTimeout(function () {
-        aggiornaDashboard("timer");
-      }, REFRESH_MS);
-
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => aggiornaDashboard("timer"), REFRESH_MS);
       updateCountdown();
     }
 
     function forceRefresh() {
-      if (isRefreshing) {
-        return;
-      }
-
+      if (isRefreshing) return;
       if (refreshTimer) {
         window.clearTimeout(refreshTimer);
         refreshTimer = null;
       }
-
       aggiornaDashboard("manuale");
     }
 
     async function readErrorDetails(response) {
-      const contentType =
-        response.headers.get("content-type") || "";
-
       try {
-        if (contentType.includes("application/json")) {
-          return await response.json();
-        }
-
-        return await response.text();
+        const contentType = response.headers.get("content-type") || "";
+        return contentType.includes("application/json")
+          ? await response.json()
+          : await response.text();
+      } catch (error) {
+        return "Impossibile leggere il dettaglio errore: " + error.message;
       }
-      catch (error) {
-        return (
-          "Impossibile leggere il dettaglio errore: " +
-          error.message
-        );
-      }
-    }
-
-    function normalizeParent(task) {
-      return {
-        parentId:
-          task.parentId ??
-          task.ticketId ??
-          task.problemId ??
-          task.changeId,
-
-        parentTitle:
-          task.parentTitle ??
-          task.ticketTitle ??
-          task.problemTitle ??
-          task.changeTitle,
-
-        parentUrl:
-          task.parentUrl ??
-          task.ticketUrl ??
-          task.problemUrl ??
-          task.changeUrl
-      };
     }
 
     function groupTasksByParent(tasks) {
       const groups = new Map();
-
-      if (!Array.isArray(tasks)) {
-        return groups;
-      }
+      if (!Array.isArray(tasks)) return groups;
 
       for (const task of tasks) {
-        const parent = normalizeParent(task);
-        const parentKey = String(parent.parentId);
-
+        const parentKey = String(task.parentId);
         if (!groups.has(parentKey)) {
           groups.set(parentKey, {
-            parentId: parent.parentId,
-            parentTitle: parent.parentTitle,
-            parentUrl: parent.parentUrl,
+            parentId: task.parentId,
+            parentTitle: task.parentTitle,
+            parentUrl: task.parentUrl,
             tasks: []
           });
         }
-
         groups.get(parentKey).tasks.push(task);
       }
 
@@ -865,84 +625,46 @@
 
     function getTaskIdsByParent(groups) {
       const result = new Map();
-
       for (const [parentKey, group] of groups.entries()) {
-        result.set(
-          parentKey,
-          new Set(
-            group.tasks.map(function (task) {
-              return String(task.taskId);
-            })
-          )
-        );
+        result.set(parentKey, new Set(group.tasks.map(task => String(task.taskId))));
       }
-
       return result;
     }
 
-    function getParentsWithNewTasks(
-      category,
-      nextTaskIdsByParent
-    ) {
-      const parentsWithNewTasks = new Set();
+    function getParentsWithNewTasks(category, nextTaskIdsByParent) {
+      const changedParents = new Set();
       const oldMap = previous.taskIdsByParent[category];
+      if (oldMap === null) return changedParents;
 
-      if (oldMap === null) {
-        return parentsWithNewTasks;
-      }
-
-      for (
-        const [parentKey, nextTaskIds]
-        of nextTaskIdsByParent.entries()
-      ) {
-        const previousTaskIds =
-          oldMap.get(parentKey) || new Set();
-
-        for (const taskId of nextTaskIds.values()) {
-          if (!previousTaskIds.has(taskId)) {
-            parentsWithNewTasks.add(parentKey);
+      for (const [parentKey, nextTaskIds] of nextTaskIdsByParent.entries()) {
+        const oldTaskIds = oldMap.get(parentKey) || new Set();
+        for (const taskId of nextTaskIds) {
+          if (!oldTaskIds.has(taskId)) {
+            changedParents.add(parentKey);
             break;
           }
         }
       }
 
-      return parentsWithNewTasks;
+      return changedParents;
     }
 
     function renderActivityTasks(category, tasks) {
-      const container = document.getElementById(
-        "tasks-" + category
-      );
-
+      const container = document.getElementById("tasks-" + category);
       const groups = groupTasksByParent(tasks);
-
-      const nextTaskIdsByParent =
-        getTaskIdsByParent(groups);
-
-      const parentsWithNewTasks =
-        getParentsWithNewTasks(
-          category,
-          nextTaskIdsByParent
-        );
-
+      const nextTaskIdsByParent = getTaskIdsByParent(groups);
+      const parentsWithNewTasks = getParentsWithNewTasks(category, nextTaskIdsByParent);
       container.innerHTML = "";
 
       if (groups.size === 0) {
-        container.innerHTML =
-          '<div class="empty">Nessuna attività trovata</div>';
-
-        previous.taskIdsByParent[category] =
-          nextTaskIdsByParent;
-
+        container.innerHTML = '<div class="empty">Nessuna attività trovata</div>';
+        previous.taskIdsByParent[category] = nextTaskIdsByParent;
         return;
       }
 
-      for (
-        const [parentKey, group]
-        of groups.entries()
-      ) {
-        const groupEl = document.createElement("div");
-        groupEl.className = "parent-task-group";
+      for (const [parentKey, group] of groups.entries()) {
+        const groupElement = document.createElement("div");
+        groupElement.className = "parent-task-group";
 
         const header = document.createElement("div");
         header.className = "parent-group-header";
@@ -952,149 +674,100 @@
         link.href = group.parentUrl;
         link.target = "_blank";
         link.rel = "noopener noreferrer";
-
-        link.textContent =
-          "#" +
-          group.parentId +
-          " - " +
-          (group.parentTitle || "(senza titolo)");
+        link.textContent = "#" + group.parentId + " - " + (group.parentTitle || "(senza titolo)");
 
         header.appendChild(link);
-        groupEl.appendChild(header);
+        groupElement.appendChild(header);
 
         for (const task of group.tasks) {
-          const taskRow = document.createElement("div");
-          taskRow.className = "task-row";
+          const row = document.createElement("div");
+          row.className = "task-row";
 
           const meta = document.createElement("div");
           meta.className = "task-meta";
-
-          meta.textContent =
-            "Task #" +
-            task.taskId +
-            " · " +
-            (task.taskDate || "data sconosciuta");
+          meta.textContent = "Task #" + task.taskId + " · " + (task.taskDate || "data sconosciuta");
 
           const content = document.createElement("div");
           content.className = "task-content";
+          content.textContent = task.content || "(senza contenuto)";
 
-          content.textContent =
-            task.content || "(senza contenuto)";
-
-          taskRow.appendChild(meta);
-          taskRow.appendChild(content);
-          groupEl.appendChild(taskRow);
+          row.appendChild(meta);
+          row.appendChild(content);
+          groupElement.appendChild(row);
         }
 
-        container.appendChild(groupEl);
-
-        if (parentsWithNewTasks.has(parentKey)) {
-          pulseElement(groupEl);
-        }
+        container.appendChild(groupElement);
+        if (parentsWithNewTasks.has(parentKey)) pulseElement(groupElement);
       }
 
-      previous.taskIdsByParent[category] =
-        nextTaskIdsByParent;
+      previous.taskIdsByParent[category] = nextTaskIdsByParent;
     }
 
     async function fetchDashboardFallback() {
-      const response = await fetch(
-        "/api/dashboard?ts=" + Date.now(),
-        {
-          method: "GET",
-          cache: "no-store"
-        }
-      );
+      const response = await fetch("/api/dashboard?ts=" + Date.now(), {
+        method: "GET",
+        cache: "no-store"
+      });
 
       if (!response.ok) {
         const details = await readErrorDetails(response);
-
-        throw {
-          message:
-            "HTTP " +
-            response.status +
-            " " +
-            response.statusText,
-          details: details
-        };
+        throw { message: "HTTP " + response.status + " " + response.statusText, details };
       }
 
       return await response.json();
     }
 
     async function fetchDashboardStream() {
-      const response = await fetch(
-        "/api/dashboard/stream?ts=" + Date.now(),
-        {
-          method: "GET",
-          cache: "no-store"
-        }
-      );
+      const response = await fetch("/api/dashboard/stream?ts=" + Date.now(), {
+        method: "GET",
+        cache: "no-store"
+      });
 
       if (!response.ok) {
         const details = await readErrorDetails(response);
-
-        throw {
-          message:
-            "HTTP " +
-            response.status +
-            " " +
-            response.statusText,
-          details: details
-        };
+        throw { message: "HTTP " + response.status + " " + response.statusText, details };
       }
 
       if (!response.body || !response.body.getReader) {
-        return await fetchDashboardFallback();
+        const fallback = await fetchDashboardFallback();
+        applyStats(fallback.stats);
+        setActivityTotals(fallback.totals);
+        CATEGORIES.forEach(category => renderActivityTasks(category, fallback[category]));
+        return fallback;
       }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
-
+      const receivedCategories = new Set();
       let buffer = "";
       let finalResult = null;
 
       function processLine(line) {
         const trimmed = line.trim();
-
-        if (!trimmed) {
-          return;
-        }
+        if (!trimmed) return;
 
         const event = JSON.parse(trimmed);
 
         if (event.type === "start") {
-          setActivityTotals(event.totals);
           applyStats(event.stats);
+          setActivityTotals(event.totals);
+          return;
+        }
 
-          showProgress(
-            "chiamate",
-            0,
-            event.totals?.chiamate || 0
-          );
-
-          showProgress(
-            "problemi",
-            0,
-            event.totals?.problemi || 0
-          );
-
-          showProgress(
-            "cambiamenti",
-            0,
-            event.totals?.cambiamenti || 0
-          );
-
+        if (event.type === "categoryStart") {
+          showProgress(event.category, 0, event.total || 0);
           return;
         }
 
         if (event.type === "progress") {
-          showProgress(
-            event.category,
-            event.completed || 0,
-            event.total || 0
-          );
+          showProgress(event.category, event.completed || 0, event.total || 0);
+          return;
+        }
 
+        if (event.type === "categoryResult") {
+          renderActivityTasks(event.category, event.items || []);
+          receivedCategories.add(event.category);
+          hideProgress(event.category);
           return;
         }
 
@@ -1104,106 +777,49 @@
         }
 
         if (event.type === "error") {
-          throw new Error(
-            event.message ||
-            "Errore durante il caricamento attività"
-          );
+          throw new Error(event.message || "Errore durante il caricamento attività");
         }
       }
 
       while (true) {
         const chunk = await reader.read();
+        if (chunk.done) break;
 
-        if (chunk.done) {
-          break;
-        }
-
-        buffer += decoder.decode(
-          chunk.value,
-          { stream: true }
-        );
-
+        buffer += decoder.decode(chunk.value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          processLine(line);
-        }
+        for (const line of lines) processLine(line);
       }
 
       buffer += decoder.decode();
+      if (buffer.trim()) processLine(buffer);
 
-      if (buffer.trim()) {
-        processLine(buffer);
-      }
+      if (!finalResult) throw new Error("La risposta non contiene il risultato finale");
 
-      if (!finalResult) {
-        throw new Error(
-          "La risposta non contiene il risultato finale"
-        );
-      }
+      applyStats(finalResult.stats);
+      setActivityTotals(finalResult.totals);
+      CATEGORIES.forEach(category => {
+        if (!receivedCategories.has(category)) renderActivityTasks(category, finalResult[category] || []);
+      });
 
       return finalResult;
     }
 
     async function aggiornaDashboard(source) {
-      if (isRefreshing) {
-        return;
-      }
+      if (isRefreshing) return;
 
       isRefreshing = true;
       setRefreshButtonLoading(true);
 
       try {
         setStatus("Aggiornamento in corso...", "info");
-
-        const dashboardData =
-          await fetchDashboardStream();
-
-        applyStats(dashboardData.stats);
-        setActivityTotals(dashboardData.totals);
-
-        renderActivityTasks(
-          "chiamate",
-          dashboardData.chiamate
-        );
-
-        renderActivityTasks(
-          "problemi",
-          dashboardData.problemi
-        );
-
-        renderActivityTasks(
-          "cambiamenti",
-          dashboardData.cambiamenti
-        );
-
-        setStatus(
-          "Aggiornato alle " +
-          (
-            dashboardData.aggiornatoAlle ||
-            nowText()
-          ),
-          "ok"
-        );
-      }
-      catch (error) {
-        const message =
-          error && error.message
-            ? error.message
-            : String(error);
-
-        console.error(
-          "Errore aggiornamento dashboard",
-          error
-        );
-
-        setStatus(
-          "Errore aggiornamento: " + message,
-          "error"
-        );
-      }
-      finally {
+        const dashboardData = await fetchDashboardStream();
+        setStatus("Aggiornato alle " + (dashboardData.aggiornatoAlle || nowText()), "ok");
+      } catch (error) {
+        const message = error && error.message ? error.message : String(error);
+        console.error("Errore aggiornamento dashboard", error);
+        setStatus("Errore aggiornamento: " + message, "error");
+      } finally {
         hideAllProgress();
         isRefreshing = false;
         setRefreshButtonLoading(false);
@@ -1211,39 +827,16 @@
       }
     }
 
-    window.addEventListener(
-      "error",
-      function (event) {
-        console.error(
-          "Errore JavaScript:",
-          event.message,
-          event
-        );
-      }
-    );
+    window.addEventListener("error", event => {
+      console.error("Errore JavaScript:", event.message, event);
+    });
 
-    window.addEventListener(
-      "unhandledrejection",
-      function (event) {
-        console.error(
-          "Promise non gestita:",
-          event.reason
-        );
-      }
-    );
+    window.addEventListener("unhandledrejection", event => {
+      console.error("Promise non gestita:", event.reason);
+    });
 
-    document
-      .getElementById("force-refresh")
-      .addEventListener(
-        "click",
-        forceRefresh
-      );
-
-    window.setInterval(
-      updateCountdown,
-      500
-    );
-
+    document.getElementById("force-refresh").addEventListener("click", forceRefresh);
+    window.setInterval(updateCountdown, 500);
     aggiornaDashboard("iniziale");
   </script>
 </body>
