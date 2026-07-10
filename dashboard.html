@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <title>Dashboard GLPI</title>
 
   <style>
@@ -52,10 +53,10 @@
       flex-direction: column;
       align-items: flex-end;
       gap: 3px;
-      font-size: 13px;
-      color: #6b7280;
-      text-align: right;
       min-height: 36px;
+      color: #6b7280;
+      font-size: 13px;
+      text-align: right;
     }
 
     .status-ok {
@@ -79,14 +80,22 @@
       justify-content: center;
       cursor: pointer;
       box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
-      transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
+      transition:
+        transform 160ms ease,
+        box-shadow 160ms ease,
+        background 160ms ease,
+        color 160ms ease;
     }
 
     .refresh-button:hover {
       transform: translateY(-1px);
-      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
       background: #111827;
       color: #ffffff;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+    }
+
+    .refresh-button:active {
+      transform: translateY(0);
     }
 
     .refresh-button:disabled {
@@ -100,8 +109,13 @@
     }
 
     @keyframes spin {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
+      from {
+        transform: rotate(0deg);
+      }
+
+      to {
+        transform: rotate(360deg);
+      }
     }
 
     .cards {
@@ -122,27 +136,36 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease, border-color 180ms ease;
+      transition:
+        transform 180ms ease,
+        box-shadow 180ms ease,
+        background-color 180ms ease,
+        border-color 180ms ease;
     }
 
     .card.pulse {
-      animation: cardInvertPulse 2.4s ease-in-out;
+      animation: card-invert-pulse 2.4s ease-in-out;
     }
 
-    .card.pulse .title,
-    .card.pulse .number {
-      animation: cardTextPulse 2.4s ease-in-out;
+    .card.pulse .stat-title,
+    .card.pulse .stat-number {
+      animation: card-text-pulse 2.4s ease-in-out;
     }
 
-    @keyframes cardInvertPulse {
-      0%, 24%, 50%, 100% {
+    @keyframes card-invert-pulse {
+      0%,
+      24%,
+      50%,
+      100% {
         background: #ffffff;
         border-color: #e5e7eb;
         transform: translateY(0) scale(1);
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
       }
 
-      12%, 38%, 64% {
+      12%,
+      38%,
+      64% {
         background: #111827;
         border-color: #111827;
         transform: translateY(-4px) scale(1.015);
@@ -150,27 +173,37 @@
       }
     }
 
-    @keyframes cardTextPulse {
-      0%, 24%, 50%, 100% { color: inherit; }
-      12%, 38%, 64% { color: #ffffff; }
+    @keyframes card-text-pulse {
+      0%,
+      24%,
+      50%,
+      100% {
+        color: inherit;
+      }
+
+      12%,
+      38%,
+      64% {
+        color: #ffffff;
+      }
     }
 
-    .title {
+    .stat-title {
+      margin-bottom: 12px;
+      color: #6b7280;
       font-size: 13px;
       line-height: 1.2;
       font-weight: 700;
       letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: #6b7280;
       text-align: center;
-      margin-bottom: 12px;
+      text-transform: uppercase;
     }
 
-    .number {
+    .stat-number {
+      color: #111827;
       font-size: 46px;
       line-height: 1;
       font-weight: 800;
-      color: #111827;
     }
 
     .activities {
@@ -195,14 +228,54 @@
     }
 
     .activity-title {
+      min-height: 40px;
       padding: 10px 14px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #fafafa;
+      color: #6b7280;
       font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: #6b7280;
-      border-bottom: 1px solid #e5e7eb;
-      background: #fafafa;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .activity-title-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .activity-title-total {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .activity-progress {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      color: #9ca3af;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: normal;
+      text-transform: none;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .activity-progress[hidden] {
+      display: none;
+    }
+
+    .activity-progress svg {
+      width: 14px;
+      height: 14px;
+      animation: spin 850ms linear infinite;
     }
 
     .activity-list {
@@ -216,9 +289,9 @@
     }
 
     .empty {
+      padding: 6px 0;
       color: #6b7280;
       font-size: 13px;
-      padding: 6px 0;
     }
 
     .ticket-task-group {
@@ -226,11 +299,15 @@
       border-radius: 12px;
       background: #ffffff;
       overflow: hidden;
-      transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease, border-color 180ms ease;
+      transition:
+        transform 180ms ease,
+        box-shadow 180ms ease,
+        background-color 180ms ease,
+        border-color 180ms ease;
     }
 
     .ticket-task-group.pulse {
-      animation: ticketGroupInvertPulse 2.4s ease-in-out;
+      animation: ticket-group-invert-pulse 2.4s ease-in-out;
     }
 
     .ticket-task-group.pulse .ticket-group-header,
@@ -238,24 +315,31 @@
     .ticket-task-group.pulse .task-row,
     .ticket-task-group.pulse .task-meta,
     .ticket-task-group.pulse .task-content {
-      animation: ticketGroupTextPulse 2.4s ease-in-out;
+      animation: ticket-group-text-pulse 2.4s ease-in-out;
     }
 
     .ticket-task-group.pulse .task-row {
-      animation-name: ticketGroupTextPulse, ticketRowBorderPulse;
+      animation-name:
+        ticket-group-text-pulse,
+        ticket-row-border-pulse;
       animation-duration: 2.4s, 2.4s;
       animation-timing-function: ease-in-out, ease-in-out;
     }
 
-    @keyframes ticketGroupInvertPulse {
-      0%, 24%, 50%, 100% {
+    @keyframes ticket-group-invert-pulse {
+      0%,
+      24%,
+      50%,
+      100% {
         background: #ffffff;
         border-color: #e5e7eb;
         transform: translateY(0) scale(1);
         box-shadow: none;
       }
 
-      12%, 38%, 64% {
+      12%,
+      38%,
+      64% {
         background: #111827;
         border-color: #111827;
         transform: translateY(-4px) scale(1.01);
@@ -263,14 +347,34 @@
       }
     }
 
-    @keyframes ticketGroupTextPulse {
-      0%, 24%, 50%, 100% { color: inherit; }
-      12%, 38%, 64% { color: #ffffff; }
+    @keyframes ticket-group-text-pulse {
+      0%,
+      24%,
+      50%,
+      100% {
+        color: inherit;
+      }
+
+      12%,
+      38%,
+      64% {
+        color: #ffffff;
+      }
     }
 
-    @keyframes ticketRowBorderPulse {
-      0%, 24%, 50%, 100% { border-top-color: #e5e7eb; }
-      12%, 38%, 64% { border-top-color: #4b5563; }
+    @keyframes ticket-row-border-pulse {
+      0%,
+      24%,
+      50%,
+      100% {
+        border-top-color: #e5e7eb;
+      }
+
+      12%,
+      38%,
+      64% {
+        border-top-color: #4b5563;
+      }
     }
 
     .ticket-group-header {
@@ -278,17 +382,11 @@
       border-bottom: 1px solid #f0f0f0;
     }
 
-    .ticket-task-group.pulse .ticket-group-header {
-      animation-name: ticketGroupTextPulse, ticketRowBorderPulse;
-      animation-duration: 2.4s, 2.4s;
-      animation-timing-function: ease-in-out, ease-in-out;
-    }
-
     .ticket-group-link {
       display: inline-block;
+      color: #111827;
       font-size: 13px;
       font-weight: 800;
-      color: #111827;
       text-decoration: none;
     }
 
@@ -298,23 +396,22 @@
 
     .task-row {
       padding: 10px 11px;
+    }
+
+    .task-row + .task-row {
       border-top: 1px solid #e5e7eb;
     }
 
-    .task-row:first-of-type {
-      border-top: none;
-    }
-
     .task-meta {
-      font-size: 12px;
-      color: #6b7280;
       margin-bottom: 6px;
+      color: #6b7280;
+      font-size: 12px;
     }
 
     .task-content {
+      color: #374151;
       font-size: 13px;
       line-height: 1.4;
-      color: #374151;
       white-space: pre-wrap;
       word-break: break-word;
     }
@@ -347,55 +444,107 @@
       <div class="topbar">
         <div class="status-area">
           <div id="status">Avvio dashboard...</div>
-          <div id="countdown">Prossimo aggiornamento tra 60 secondi</div>
+          <div id="countdown">Preparazione aggiornamento...</div>
         </div>
 
-        <button class="refresh-button" id="force-refresh" type="button" aria-label="Aggiorna ora" title="Aggiorna ora">
+        <button
+          class="refresh-button"
+          id="force-refresh"
+          type="button"
+          aria-label="Aggiorna ora"
+          title="Aggiorna ora"
+        >
           <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"/>
+            <path
+              fill="currentColor"
+              d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"
+            />
           </svg>
         </button>
       </div>
 
       <section class="cards" aria-label="Stato ticket">
         <article class="card" id="card-totali-aperti">
-          <div class="title">Totali aperti</div>
-          <div class="number" id="totali-aperti">0</div>
+          <div class="stat-title">Totali aperti</div>
+          <div class="stat-number" id="totali-aperti">0</div>
         </article>
 
         <article class="card" id="card-nuovi-incidenti">
-          <div class="title">Nuovi incidenti</div>
-          <div class="number" id="nuovi-incidenti">0</div>
+          <div class="stat-title">Nuovi incidenti</div>
+          <div class="stat-number" id="nuovi-incidenti">0</div>
         </article>
 
         <article class="card" id="card-nuove-richieste">
-          <div class="title">Nuove richieste</div>
-          <div class="number" id="nuove-richieste">0</div>
+          <div class="stat-title">Nuove richieste</div>
+          <div class="stat-number" id="nuove-richieste">0</div>
         </article>
 
         <article class="card" id="card-assegnati-a-me">
-          <div class="title">Assegnati a me</div>
-          <div class="number" id="assegnati-a-me">0</div>
+          <div class="stat-title">Assegnati a me</div>
+          <div class="stat-number" id="assegnati-a-me">0</div>
         </article>
       </section>
 
       <section class="activities" aria-label="Attività">
-        <article class="activity-card" id="activity-card-chiamate">
-          <div class="activity-title">Attività chiamate</div>
+        <article class="activity-card">
+          <div class="activity-title">
+            <span class="activity-title-label">
+              Attività chiamate -
+              <span
+                class="activity-title-total"
+                id="total-chiamate"
+              >0</span>
+            </span>
+
+            <span
+              class="activity-progress"
+              id="tasks-progress"
+              aria-live="polite"
+              hidden
+            >
+              <span id="tasks-progress-text">0/0</span>
+
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"
+                />
+              </svg>
+            </span>
+          </div>
+
           <div class="activity-list" id="tasks-chiamate">
             <div class="empty">Caricamento attività...</div>
           </div>
         </article>
 
-        <article class="activity-card" id="activity-card-problemi">
-          <div class="activity-title">Attività problemi</div>
+        <article class="activity-card">
+          <div class="activity-title">
+            <span class="activity-title-label">
+              Attività problemi -
+              <span
+                class="activity-title-total"
+                id="total-problemi"
+              >0</span>
+            </span>
+          </div>
+
           <div class="activity-list" id="tasks-problemi">
             <div class="empty">Nessuna attività trovata</div>
           </div>
         </article>
 
-        <article class="activity-card" id="activity-card-cambiamenti">
-          <div class="activity-title">Attività cambiamenti</div>
+        <article class="activity-card">
+          <div class="activity-title">
+            <span class="activity-title-label">
+              Attività cambiamenti -
+              <span
+                class="activity-title-total"
+                id="total-cambiamenti"
+              >0</span>
+            </span>
+          </div>
+
           <div class="activity-list" id="tasks-cambiamenti">
             <div class="empty">Nessuna attività trovata</div>
           </div>
@@ -405,7 +554,15 @@
   </main>
 
   <script>
-    const REFRESH_SECONDS = 60;
+    const configuredRefreshSeconds =
+      Number("__AUTO_REFRESH_SECONDS__");
+
+    const REFRESH_SECONDS =
+      Number.isFinite(configuredRefreshSeconds) &&
+      configuredRefreshSeconds >= 10
+        ? configuredRefreshSeconds
+        : 60;
+
     const REFRESH_MS = REFRESH_SECONDS * 1000;
 
     let nextRefreshAt = Date.now() + REFRESH_MS;
@@ -430,31 +587,72 @@
 
     function setStatus(message, type) {
       const statusEl = document.getElementById("status");
+
       statusEl.textContent = message;
       statusEl.className = "";
 
-      if (type === "ok") statusEl.classList.add("status-ok");
-      if (type === "error") statusEl.classList.add("status-error");
+      if (type === "ok") {
+        statusEl.classList.add("status-ok");
+      }
+
+      if (type === "error") {
+        statusEl.classList.add("status-error");
+      }
     }
 
     function setRefreshButtonLoading(isLoading) {
       const button = document.getElementById("force-refresh");
+
       button.disabled = isLoading;
       button.classList.toggle("loading", isLoading);
     }
 
-    function pulseElement(el) {
-      el.classList.remove("pulse");
-      void el.offsetWidth;
-      el.classList.add("pulse");
+    function setActivityTotals(totals) {
+      const values = totals || {};
+
+      document.getElementById("total-chiamate").textContent =
+        String(Number(values.chiamate) || 0);
+
+      document.getElementById("total-problemi").textContent =
+        String(Number(values.problemi) || 0);
+
+      document.getElementById("total-cambiamenti").textContent =
+        String(Number(values.cambiamenti) || 0);
+    }
+
+    function showTaskProgress(completed, total) {
+      const progress = document.getElementById("tasks-progress");
+      const text = document.getElementById("tasks-progress-text");
+
+      progress.hidden = false;
+      text.textContent =
+        String(Number(completed) || 0) +
+        "/" +
+        String(Number(total) || 0);
+    }
+
+    function hideTaskProgress() {
+      document.getElementById("tasks-progress").hidden = true;
+    }
+
+    function pulseElement(element) {
+      element.classList.remove("pulse");
+      void element.offsetWidth;
+      element.classList.add("pulse");
     }
 
     function setCard(numberId, cardId, key, value) {
       const numberEl = document.getElementById(numberId);
       const cardEl = document.getElementById(cardId);
-      const nextValue = Number.isFinite(Number(value)) ? Number(value) : 0;
 
-      if (previous[key] !== null && previous[key] !== nextValue) {
+      const nextValue = Number.isFinite(Number(value))
+        ? Number(value)
+        : 0;
+
+      if (
+        previous[key] !== null &&
+        previous[key] !== nextValue
+      ) {
         pulseElement(cardEl);
       }
 
@@ -462,11 +660,55 @@
       numberEl.textContent = String(nextValue);
     }
 
+    function applyStats(stats) {
+      if (!stats) {
+        return;
+      }
+
+      setCard(
+        "totali-aperti",
+        "card-totali-aperti",
+        "totaleAperti",
+        stats.totaleTicketAperti
+      );
+
+      setCard(
+        "nuovi-incidenti",
+        "card-nuovi-incidenti",
+        "nuoviIncidenti",
+        stats.nuoviIncidenti
+      );
+
+      setCard(
+        "nuove-richieste",
+        "card-nuove-richieste",
+        "nuoveRichieste",
+        stats.nuoveRichieste
+      );
+
+      setCard(
+        "assegnati-a-me",
+        "card-assegnati-a-me",
+        "assegnatiAMe",
+        stats.assegnatiAMe
+      );
+    }
+
     function updateCountdown() {
       const countdownEl = document.getElementById("countdown");
-      const remainingMs = Math.max(0, nextRefreshAt - Date.now());
-      const remainingSeconds = Math.ceil(remainingMs / 1000);
-      countdownEl.textContent = "Prossimo aggiornamento tra " + remainingSeconds + " secondi";
+      const remainingMs = Math.max(
+        0,
+        nextRefreshAt - Date.now()
+      );
+
+      const remainingSeconds = Math.ceil(
+        remainingMs / 1000
+      );
+
+      countdownEl.textContent =
+        "Prossimo aggiornamento tra " +
+        remainingSeconds +
+        " secondi";
     }
 
     function scheduleNextRefresh() {
@@ -484,7 +726,9 @@
     }
 
     function forceRefresh() {
-      if (isRefreshing) return;
+      if (isRefreshing) {
+        return;
+      }
 
       if (refreshTimer) {
         window.clearTimeout(refreshTimer);
@@ -495,7 +739,8 @@
     }
 
     async function readErrorDetails(response) {
-      const contentType = response.headers.get("content-type") || "";
+      const contentType =
+        response.headers.get("content-type") || "";
 
       try {
         if (contentType.includes("application/json")) {
@@ -504,7 +749,10 @@
 
         return await response.text();
       } catch (error) {
-        return "Impossibile leggere il dettaglio errore: " + error.message;
+        return (
+          "Impossibile leggere il dettaglio errore: " +
+          error.message
+        );
       }
     }
 
@@ -534,10 +782,10 @@
     }
 
     function getTaskIdsByTicket(groups) {
-      const taskIdsByTicket = new Map();
+      const result = new Map();
 
       for (const [ticketKey, group] of groups.entries()) {
-        taskIdsByTicket.set(
+        result.set(
           ticketKey,
           new Set(
             group.tasks.map(function (task) {
@@ -547,7 +795,7 @@
         );
       }
 
-      return taskIdsByTicket;
+      return result;
     }
 
     function getTicketsWithNewTasks(nextTaskIdsByTicket) {
@@ -557,8 +805,13 @@
         return ticketsWithNewTasks;
       }
 
-      for (const [ticketKey, nextTaskIds] of nextTaskIdsByTicket.entries()) {
-        const previousTaskIds = previous.chiamateTaskIdsByTicket.get(ticketKey) || new Set();
+      for (
+        const [ticketKey, nextTaskIds]
+        of nextTaskIdsByTicket.entries()
+      ) {
+        const previousTaskIds =
+          previous.chiamateTaskIdsByTicket.get(ticketKey) ||
+          new Set();
 
         for (const taskId of nextTaskIds.values()) {
           if (!previousTaskIds.has(taskId)) {
@@ -572,16 +825,26 @@
     }
 
     function renderChiamateTasks(tasks) {
-      const container = document.getElementById("tasks-chiamate");
+      const container =
+        document.getElementById("tasks-chiamate");
+
       const groups = groupTasksByTicket(tasks);
-      const nextTaskIdsByTicket = getTaskIdsByTicket(groups);
-      const ticketsWithNewTasks = getTicketsWithNewTasks(nextTaskIdsByTicket);
+
+      const nextTaskIdsByTicket =
+        getTaskIdsByTicket(groups);
+
+      const ticketsWithNewTasks =
+        getTicketsWithNewTasks(nextTaskIdsByTicket);
 
       container.innerHTML = "";
 
       if (groups.size === 0) {
-        container.innerHTML = '<div class="empty">Nessuna attività trovata</div>';
-        previous.chiamateTaskIdsByTicket = nextTaskIdsByTicket;
+        container.innerHTML =
+          '<div class="empty">Nessuna attività trovata</div>';
+
+        previous.chiamateTaskIdsByTicket =
+          nextTaskIdsByTicket;
+
         return;
       }
 
@@ -597,7 +860,11 @@
         link.href = group.ticketUrl;
         link.target = "_blank";
         link.rel = "noopener noreferrer";
-        link.textContent = "#" + group.ticketId + " - " + group.ticketTitle;
+        link.textContent =
+          "#" +
+          group.ticketId +
+          " - " +
+          group.ticketTitle;
 
         header.appendChild(link);
         groupEl.appendChild(header);
@@ -608,11 +875,16 @@
 
           const meta = document.createElement("div");
           meta.className = "task-meta";
-          meta.textContent = "Task #" + task.taskId + " · " + (task.taskDate || "data sconosciuta");
+          meta.textContent =
+            "Task #" +
+            task.taskId +
+            " · " +
+            (task.taskDate || "data sconosciuta");
 
           const content = document.createElement("div");
           content.className = "task-content";
-          content.textContent = task.content || "(senza contenuto)";
+          content.textContent =
+            task.content || "(senza contenuto)";
 
           taskRow.appendChild(meta);
           taskRow.appendChild(content);
@@ -626,11 +898,142 @@
         }
       }
 
-      previous.chiamateTaskIdsByTicket = nextTaskIdsByTicket;
+      previous.chiamateTaskIdsByTicket =
+        nextTaskIdsByTicket;
+    }
+
+    async function fetchDashboardFallback() {
+      const response = await fetch(
+        "/api/dashboard?ts=" + Date.now(),
+        {
+          method: "GET",
+          cache: "no-store"
+        }
+      );
+
+      if (!response.ok) {
+        const details = await readErrorDetails(response);
+
+        throw {
+          message:
+            "HTTP " +
+            response.status +
+            " " +
+            response.statusText,
+          details: details
+        };
+      }
+
+      return await response.json();
+    }
+
+    async function fetchDashboardStream() {
+      const response = await fetch(
+        "/api/dashboard/stream?ts=" + Date.now(),
+        {
+          method: "GET",
+          cache: "no-store"
+        }
+      );
+
+      if (!response.ok) {
+        const details = await readErrorDetails(response);
+
+        throw {
+          message:
+            "HTTP " +
+            response.status +
+            " " +
+            response.statusText,
+          details: details
+        };
+      }
+
+      if (!response.body || !response.body.getReader) {
+        return await fetchDashboardFallback();
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+
+      let buffer = "";
+      let finalResult = null;
+
+      function processLine(line) {
+        const trimmed = line.trim();
+
+        if (!trimmed) {
+          return;
+        }
+
+        const event = JSON.parse(trimmed);
+
+        if (event.type === "start") {
+          setActivityTotals(event.totals);
+          applyStats(event.stats);
+          showTaskProgress(0, event.total || 0);
+          return;
+        }
+
+        if (event.type === "progress") {
+          showTaskProgress(
+            event.completed || 0,
+            event.total || 0
+          );
+          return;
+        }
+
+        if (event.type === "result") {
+          finalResult = event.data;
+          return;
+        }
+
+        if (event.type === "error") {
+          throw new Error(
+            event.message ||
+            "Errore durante il caricamento attività"
+          );
+        }
+      }
+
+      while (true) {
+        const chunk = await reader.read();
+
+        if (chunk.done) {
+          break;
+        }
+
+        buffer += decoder.decode(chunk.value, {
+          stream: true
+        });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          processLine(line);
+        }
+      }
+
+      buffer += decoder.decode();
+
+      if (buffer.trim()) {
+        processLine(buffer);
+      }
+
+      if (!finalResult) {
+        throw new Error(
+          "La risposta non contiene il risultato finale"
+        );
+      }
+
+      return finalResult;
     }
 
     async function aggiornaDashboard(source) {
-      if (isRefreshing) return;
+      if (isRefreshing) {
+        return;
+      }
 
       isRefreshing = true;
       setRefreshButtonLoading(true);
@@ -638,51 +1041,38 @@
       try {
         setStatus("Aggiornamento in corso...", "info");
 
-        const statsResponse = await fetch("/api/stats?ts=" + Date.now(), {
-          method: "GET",
-          cache: "no-store"
-        });
+        const dashboardData =
+          await fetchDashboardStream();
 
-        if (!statsResponse.ok) {
-          const details = await readErrorDetails(statsResponse);
-          throw {
-            message: "HTTP " + statsResponse.status + " " + statsResponse.statusText,
-            details: details
-          };
-        }
+        applyStats(dashboardData.stats);
+        setActivityTotals(dashboardData.totals);
+        renderChiamateTasks(dashboardData.chiamate);
 
-        const stats = await statsResponse.json();
+        setStatus(
+          "Aggiornato alle " +
+          (
+            dashboardData.aggiornatoAlle ||
+            nowText()
+          ),
+          "ok"
+        );
+      } catch (error) {
+        const message =
+          error && error.message
+            ? error.message
+            : String(error);
 
-        setCard("totali-aperti", "card-totali-aperti", "totaleAperti", stats.totaleTicketAperti);
-        setCard("nuovi-incidenti", "card-nuovi-incidenti", "nuoviIncidenti", stats.nuoviIncidenti);
-        setCard("nuove-richieste", "card-nuove-richieste", "nuoveRichieste", stats.nuoveRichieste);
-        setCard("assegnati-a-me", "card-assegnati-a-me", "assegnatiAMe", stats.assegnatiAMe);
+        console.error(
+          "Errore aggiornamento dashboard",
+          error
+        );
 
-        const tasksResponse = await fetch("/api/tasks?ts=" + Date.now(), {
-          method: "GET",
-          cache: "no-store"
-        });
-
-        if (!tasksResponse.ok) {
-          const details = await readErrorDetails(tasksResponse);
-          throw {
-            message: "HTTP " + tasksResponse.status + " " + tasksResponse.statusText,
-            details: details
-          };
-        }
-
-        const tasks = await tasksResponse.json();
-
-        renderChiamateTasks(tasks.chiamate);
-
-        setStatus("Aggiornato alle " + (stats.aggiornatoAlle || nowText()), "ok");
-      }
-      catch (error) {
-        const message = error && error.message ? error.message : String(error);
-        console.error("Errore aggiornamento dashboard", error);
-        setStatus("Errore aggiornamento: " + message, "error");
-      }
-      finally {
+        setStatus(
+          "Errore aggiornamento: " + message,
+          "error"
+        );
+      } finally {
+        hideTaskProgress();
         isRefreshing = false;
         setRefreshButtonLoading(false);
         scheduleNextRefresh();
@@ -690,14 +1080,26 @@
     }
 
     window.addEventListener("error", function (event) {
-      console.error("Errore JavaScript:", event.message, event);
+      console.error(
+        "Errore JavaScript:",
+        event.message,
+        event
+      );
     });
 
-    window.addEventListener("unhandledrejection", function (event) {
-      console.error("Promise non gestita:", event.reason);
-    });
+    window.addEventListener(
+      "unhandledrejection",
+      function (event) {
+        console.error(
+          "Promise non gestita:",
+          event.reason
+        );
+      }
+    );
 
-    document.getElementById("force-refresh").addEventListener("click", forceRefresh);
+    document
+      .getElementById("force-refresh")
+      .addEventListener("click", forceRefresh);
 
     window.setInterval(updateCountdown, 500);
 
