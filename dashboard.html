@@ -78,8 +78,14 @@
     .status-error { color: #b91c1c; font-weight: 700; }
 
     .refresh-button {
+      flex: 0 0 38px;
       width: 38px;
+      min-width: 38px;
+      max-width: 38px;
       height: 38px;
+      min-height: 38px;
+      max-height: 38px;
+      padding: 0;
       border: 1px solid #d1d5db;
       border-radius: 12px;
       background: #ffffff;
@@ -87,9 +93,21 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      overflow: hidden;
+      line-height: 0;
+      appearance: none;
       cursor: pointer;
       box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
       transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
+    }
+
+    .refresh-button svg {
+      display: block;
+      flex: 0 0 19px;
+      width: 19px;
+      height: 19px;
+      transform-origin: 50% 50%;
+      pointer-events: none;
     }
 
     .refresh-button:hover {
@@ -99,13 +117,19 @@
       box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
     }
 
-    .refresh-button:disabled {
+    .refresh-button:disabled,
+    .refresh-button:disabled:hover {
       opacity: 0.55;
       cursor: not-allowed;
       transform: none;
+      background: #ffffff;
+      color: #111827;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
     }
 
-    .refresh-button.loading svg { animation: spin 900ms linear infinite; }
+    .refresh-button.loading svg {
+      animation: spin 900ms linear infinite;
+    }
 
     @keyframes spin {
       from { transform: rotate(0deg); }
@@ -479,6 +503,8 @@
       : 60;
     const REFRESH_MS = REFRESH_SECONDS * 1000;
     const CATEGORIES = ["chiamate", "problemi", "cambiamenti"];
+    const CACHE_KEY = "personal-glpi-dashboard-cache-v3";
+    const CACHE_VERSION = 3;
 
     let nextRefreshAt = Date.now() + REFRESH_MS;
     let refreshTimer = null;
@@ -495,6 +521,56 @@
         cambiamenti: null
       }
     };
+
+    function createEmptyCache() {
+      return {
+        version: CACHE_VERSION,
+        stats: null,
+        totals: {
+          chiamate: 0,
+          problemi: 0,
+          cambiamenti: 0
+        },
+        tasks: {
+          chiamate: [],
+          problemi: [],
+          cambiamenti: []
+        },
+        lists: {},
+        listUpdatedAt: {},
+        categoryUpdatedAt: {},
+        aggiornatoAlle: null,
+        lastFullRefreshAt: 0
+      };
+    }
+
+    function readCache() {
+      try {
+        const raw = window.sessionStorage.getItem(CACHE_KEY);
+        if (!raw) return null;
+
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.version !== CACHE_VERSION) return null;
+
+        return parsed;
+      } catch (error) {
+        console.warn("Impossibile leggere la cache dashboard", error);
+        return null;
+      }
+    }
+
+    let dashboardCache = readCache() || createEmptyCache();
+
+    function saveCache() {
+      try {
+        window.sessionStorage.setItem(
+          CACHE_KEY,
+          JSON.stringify(dashboardCache)
+        );
+      } catch (error) {
+        console.warn("Impossibile salvare la cache dashboard", error);
+      }
+    }
 
     function nowText() {
       return new Date().toLocaleTimeString("it-IT", {
@@ -518,6 +594,30 @@
       button.classList.toggle("loading", isLoading);
     }
 
+    function mergeTotalsPatch(patch) {
+      if (!patch || typeof patch !== "object") return;
+
+      dashboardCache.totals = dashboardCache.totals || {};
+
+      for (const category of CATEGORIES) {
+        if (Object.prototype.hasOwnProperty.call(patch, category)) {
+          dashboardCache.totals[category] = Number(patch[category]) || 0;
+        }
+      }
+    }
+
+    function mergeListViews(listViews, timestamp = Date.now()) {
+      if (!listViews || typeof listViews !== "object") return;
+
+      dashboardCache.lists = dashboardCache.lists || {};
+      dashboardCache.listUpdatedAt = dashboardCache.listUpdatedAt || {};
+
+      for (const [view, items] of Object.entries(listViews)) {
+        dashboardCache.lists[view] = Array.isArray(items) ? items : [];
+        dashboardCache.listUpdatedAt[view] = timestamp;
+      }
+    }
+
     function setActivityTotals(totals) {
       const values = totals || {};
       document.getElementById("total-chiamate").textContent = String(Number(values.chiamate) || 0);
@@ -529,6 +629,7 @@
       const progress = document.getElementById("progress-" + category);
       const text = document.getElementById("progress-" + category + "-text");
       if (!progress || !text) return;
+
       progress.hidden = false;
       text.textContent = String(Number(completed) || 0) + "/" + String(Number(total) || 0);
     }
@@ -563,6 +664,7 @@
 
     function applyStats(stats) {
       if (!stats) return;
+
       setCard("totali-aperti", "card-totali-aperti", "totaleAperti", stats.totaleTicketAperti);
       setCard("nuovi-incidenti", "card-nuovi-incidenti", "nuoviIncidenti", stats.nuoviIncidenti);
       setCard("nuove-richieste", "card-nuove-richieste", "nuoveRichieste", stats.nuoveRichieste);
@@ -572,23 +674,28 @@
     function updateCountdown() {
       const remainingMs = Math.max(0, nextRefreshAt - Date.now());
       const remainingSeconds = Math.ceil(remainingMs / 1000);
+
       document.getElementById("countdown").textContent =
         "Prossimo aggiornamento tra " + remainingSeconds + " secondi";
     }
 
-    function scheduleNextRefresh() {
-      nextRefreshAt = Date.now() + REFRESH_MS;
+    function scheduleNextRefresh(delayMs = REFRESH_MS) {
+      const safeDelay = Math.max(0, Number(delayMs) || 0);
+      nextRefreshAt = Date.now() + safeDelay;
+
       if (refreshTimer) window.clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(() => aggiornaDashboard("timer"), REFRESH_MS);
+      refreshTimer = window.setTimeout(() => aggiornaDashboard("timer"), safeDelay);
       updateCountdown();
     }
 
     function forceRefresh() {
       if (isRefreshing) return;
+
       if (refreshTimer) {
         window.clearTimeout(refreshTimer);
         refreshTimer = null;
       }
+
       aggiornaDashboard("manuale");
     }
 
@@ -609,6 +716,7 @@
 
       for (const task of tasks) {
         const parentKey = String(task.parentId);
+
         if (!groups.has(parentKey)) {
           groups.set(parentKey, {
             parentId: task.parentId,
@@ -617,6 +725,7 @@
             tasks: []
           });
         }
+
         groups.get(parentKey).tasks.push(task);
       }
 
@@ -625,19 +734,26 @@
 
     function getTaskIdsByParent(groups) {
       const result = new Map();
+
       for (const [parentKey, group] of groups.entries()) {
-        result.set(parentKey, new Set(group.tasks.map(task => String(task.taskId))));
+        result.set(
+          parentKey,
+          new Set(group.tasks.map(task => String(task.taskId)))
+        );
       }
+
       return result;
     }
 
     function getParentsWithNewTasks(category, nextTaskIdsByParent) {
       const changedParents = new Set();
       const oldMap = previous.taskIdsByParent[category];
+
       if (oldMap === null) return changedParents;
 
       for (const [parentKey, nextTaskIds] of nextTaskIdsByParent.entries()) {
         const oldTaskIds = oldMap.get(parentKey) || new Set();
+
         for (const taskId of nextTaskIds) {
           if (!oldTaskIds.has(taskId)) {
             changedParents.add(parentKey);
@@ -654,6 +770,7 @@
       const groups = groupTasksByParent(tasks);
       const nextTaskIdsByParent = getTaskIdsByParent(groups);
       const parentsWithNewTasks = getParentsWithNewTasks(category, nextTaskIdsByParent);
+
       container.innerHTML = "";
 
       if (groups.size === 0) {
@@ -697,10 +814,52 @@
         }
 
         container.appendChild(groupElement);
-        if (parentsWithNewTasks.has(parentKey)) pulseElement(groupElement);
+
+        if (parentsWithNewTasks.has(parentKey)) {
+          pulseElement(groupElement);
+        }
       }
 
       previous.taskIdsByParent[category] = nextTaskIdsByParent;
+    }
+
+    function applyCachedDashboard() {
+      if (dashboardCache.stats) applyStats(dashboardCache.stats);
+      setActivityTotals(dashboardCache.totals);
+
+      const tasks = dashboardCache.tasks || {};
+      for (const category of CATEGORIES) {
+        renderActivityTasks(category, Array.isArray(tasks[category]) ? tasks[category] : []);
+      }
+    }
+
+    function hasUsableCache() {
+      return Boolean(
+        dashboardCache &&
+        dashboardCache.version === CACHE_VERSION &&
+        dashboardCache.stats &&
+        dashboardCache.tasks &&
+        dashboardCache.lists
+      );
+    }
+
+    function absorbFullDashboard(data) {
+      if (!data || typeof data !== "object") return;
+
+      if (data.stats) dashboardCache.stats = data.stats;
+      if (data.totals) dashboardCache.totals = data.totals;
+
+      dashboardCache.tasks = dashboardCache.tasks || {};
+      for (const category of CATEGORIES) {
+        dashboardCache.tasks[category] = Array.isArray(data[category]) ? data[category] : [];
+        dashboardCache.categoryUpdatedAt[category] = Date.now();
+      }
+
+      mergeListViews(data.lists, Date.now());
+
+      dashboardCache.aggiornatoAlle = data.aggiornatoAlle || nowText();
+      dashboardCache.lastFullRefreshAt = Date.now();
+      saveCache();
     }
 
     async function fetchDashboardFallback() {
@@ -711,10 +870,16 @@
 
       if (!response.ok) {
         const details = await readErrorDetails(response);
-        throw { message: "HTTP " + response.status + " " + response.statusText, details };
+        throw {
+          message: "HTTP " + response.status + " " + response.statusText,
+          details
+        };
       }
 
-      return await response.json();
+      const data = await response.json();
+      absorbFullDashboard(data);
+      applyCachedDashboard();
+      return data;
     }
 
     async function fetchDashboardStream() {
@@ -725,20 +890,18 @@
 
       if (!response.ok) {
         const details = await readErrorDetails(response);
-        throw { message: "HTTP " + response.status + " " + response.statusText, details };
+        throw {
+          message: "HTTP " + response.status + " " + response.statusText,
+          details
+        };
       }
 
       if (!response.body || !response.body.getReader) {
-        const fallback = await fetchDashboardFallback();
-        applyStats(fallback.stats);
-        setActivityTotals(fallback.totals);
-        CATEGORIES.forEach(category => renderActivityTasks(category, fallback[category]));
-        return fallback;
+        return await fetchDashboardFallback();
       }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
-      const receivedCategories = new Set();
       let buffer = "";
       let finalResult = null;
 
@@ -748,13 +911,21 @@
 
         const event = JSON.parse(trimmed);
 
-        if (event.type === "start") {
-          applyStats(event.stats);
-          setActivityTotals(event.totals);
+        if (event.type === "refreshStart") {
           return;
         }
 
         if (event.type === "categoryStart") {
+          if (event.stats) {
+            dashboardCache.stats = event.stats;
+            applyStats(event.stats);
+          }
+
+          mergeTotalsPatch(event.totalsPatch);
+          setActivityTotals(dashboardCache.totals);
+          mergeListViews(event.listViews, Date.now());
+          saveCache();
+
           showProgress(event.category, 0, event.total || 0);
           return;
         }
@@ -765,9 +936,16 @@
         }
 
         if (event.type === "categoryResult") {
-          renderActivityTasks(event.category, event.items || []);
-          receivedCategories.add(event.category);
+          const items = Array.isArray(event.items) ? event.items : [];
+
+          dashboardCache.tasks = dashboardCache.tasks || {};
+          dashboardCache.categoryUpdatedAt = dashboardCache.categoryUpdatedAt || {};
+          dashboardCache.tasks[event.category] = items;
+          dashboardCache.categoryUpdatedAt[event.category] = Date.now();
+
+          renderActivityTasks(event.category, items);
           hideProgress(event.category);
+          saveCache();
           return;
         }
 
@@ -788,20 +966,20 @@
         buffer += decoder.decode(chunk.value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
-        for (const line of lines) processLine(line);
+
+        for (const line of lines) {
+          processLine(line);
+        }
       }
 
       buffer += decoder.decode();
       if (buffer.trim()) processLine(buffer);
 
-      if (!finalResult) throw new Error("La risposta non contiene il risultato finale");
+      if (!finalResult) {
+        throw new Error("La risposta non contiene il risultato finale");
+      }
 
-      applyStats(finalResult.stats);
-      setActivityTotals(finalResult.totals);
-      CATEGORIES.forEach(category => {
-        if (!receivedCategories.has(category)) renderActivityTasks(category, finalResult[category] || []);
-      });
-
+      absorbFullDashboard(finalResult);
       return finalResult;
     }
 
@@ -814,7 +992,11 @@
       try {
         setStatus("Aggiornamento in corso...", "info");
         const dashboardData = await fetchDashboardStream();
-        setStatus("Aggiornato alle " + (dashboardData.aggiornatoAlle || nowText()), "ok");
+
+        setStatus(
+          "Aggiornato alle " + (dashboardData.aggiornatoAlle || nowText()),
+          "ok"
+        );
       } catch (error) {
         const message = error && error.message ? error.message : String(error);
         console.error("Errore aggiornamento dashboard", error);
@@ -827,17 +1009,57 @@
       }
     }
 
-    window.addEventListener("error", event => {
-      console.error("Errore JavaScript:", event.message, event);
-    });
+    function getNavigationType() {
+      const entries = performance.getEntriesByType
+        ? performance.getEntriesByType("navigation")
+        : [];
 
-    window.addEventListener("unhandledrejection", event => {
-      console.error("Promise non gestita:", event.reason);
-    });
+      return entries.length ? entries[0].type : "navigate";
+    }
+
+    function initializeDashboard() {
+      const navigationType = getNavigationType();
+      const cacheAvailable = hasUsableCache();
+
+      if (cacheAvailable) {
+        applyCachedDashboard();
+        setStatus(
+          "Dati disponibili alle " + (dashboardCache.aggiornatoAlle || nowText()),
+          "ok"
+        );
+      }
+
+      // A real browser reload always refreshes GLPI data. Normal route navigation
+      // reuses sessionStorage and avoids another expensive dashboard scan.
+      if (navigationType === "reload" || !cacheAvailable) {
+        aggiornaDashboard("iniziale");
+        return;
+      }
+
+      const age = Date.now() - Number(dashboardCache.lastFullRefreshAt || 0);
+      const remaining = Math.max(0, REFRESH_MS - age);
+
+      if (remaining === 0) {
+        aggiornaDashboard("timer");
+      } else {
+        scheduleNextRefresh(remaining);
+      }
+    }
 
     document.getElementById("force-refresh").addEventListener("click", forceRefresh);
     window.setInterval(updateCountdown, 500);
-    aggiornaDashboard("iniziale");
+
+    window.addEventListener("pageshow", function (event) {
+      if (!event.persisted) return;
+
+      const latestCache = readCache();
+      if (!latestCache) return;
+
+      dashboardCache = latestCache;
+      applyCachedDashboard();
+    });
+
+    initializeDashboard();
   </script>
 </body>
 </html>

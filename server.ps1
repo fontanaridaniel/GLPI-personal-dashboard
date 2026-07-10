@@ -543,6 +543,22 @@ function Invoke-GlpiGet {
 # DATA HELPERS
 # =========================
 
+function Get-PropertyObject {
+    param (
+        $Object,
+        [string]$Name
+    )
+
+    if ($null -eq $Object) { return $null }
+
+    try {
+        return $Object.PSObject.Properties[$Name]
+    }
+    catch {
+        return $null
+    }
+}
+
 function Convert-ToArray {
     param ($Value)
 
@@ -550,8 +566,9 @@ function Convert-ToArray {
     if ($Value -is [System.Array]) { return @($Value) }
 
     foreach ($propertyName in @("data", "items", "results", "member", "hydra:member")) {
-        if ($Value.PSObject.Properties.Name -contains $propertyName) {
-            return Convert-ToArray $Value.$propertyName
+        $property = Get-PropertyObject -Object $Value -Name $propertyName
+        if ($null -ne $property) {
+            return Convert-ToArray $property.Value
         }
     }
 
@@ -559,13 +576,17 @@ function Convert-ToArray {
 }
 
 function Get-PropValue {
-    param ($Object, [string[]]$Names)
+    param (
+        $Object,
+        [string[]]$Names
+    )
 
     if ($null -eq $Object) { return $null }
 
     foreach ($name in $Names) {
-        if ($Object.PSObject.Properties.Name -contains $name) {
-            return $Object.$name
+        $property = Get-PropertyObject -Object $Object -Name $name
+        if ($null -ne $property) {
+            return $property.Value
         }
     }
 
@@ -577,7 +598,13 @@ function Get-IdValue {
 
     if ($null -eq $Value) { return $null }
 
-    if ($Value -is [int] -or $Value -is [long] -or $Value -is [decimal]) {
+    if (
+        $Value -is [byte] -or
+        $Value -is [int16] -or
+        $Value -is [int] -or
+        $Value -is [long] -or
+        $Value -is [decimal]
+    ) {
         return [long]$Value
     }
 
@@ -587,8 +614,9 @@ function Get-IdValue {
         return $null
     }
 
-    if ($Value.PSObject.Properties.Name -contains "id") {
-        return Get-IdValue $Value.id
+    $property = Get-PropertyObject -Object $Value -Name "id"
+    if ($null -ne $property) {
+        return Get-IdValue $property.Value
     }
 
     return $null
@@ -598,19 +626,24 @@ function Get-TextValue {
     param ($Value)
 
     if ($null -eq $Value) { return "" }
+    if ($Value -is [string]) { return $Value }
 
-    if ($Value.PSObject.Properties.Name -contains "name") {
-        return [string]$Value.name
+    $property = Get-PropertyObject -Object $Value -Name "name"
+    if ($null -ne $property -and $null -ne $property.Value) {
+        return [string]$property.Value
     }
 
     return [string]$Value
 }
 
 function Get-ItemDate {
-    param ($Item, [string[]]$FieldNames)
+    param (
+        $Item,
+        [string[]]$FieldNames
+    )
 
     foreach ($field in $FieldNames) {
-        $value = Get-PropValue $Item @($field)
+        $value = Get-PropValue -Object $Item -Names @($field)
         if ($null -eq $value -or "$value" -eq "") { continue }
 
         $parsed = [datetime]::MinValue
@@ -644,8 +677,11 @@ function Convert-ToPlainText {
 function Get-TaskData {
     param ($Task)
 
-    if ($Task -and $Task.PSObject.Properties.Name -contains "item" -and $Task.item) {
-        return $Task.item
+    if ($null -eq $Task) { return $null }
+
+    $property = Get-PropertyObject -Object $Task -Name "item"
+    if ($null -ne $property -and $null -ne $property.Value) {
+        return $property.Value
     }
 
     return $Task
@@ -889,8 +925,11 @@ function Invoke-TaskCategoryScan {
             if ($Value -is [System.Array]) { return @($Value) }
 
             foreach ($propertyName in @("data", "items", "results", "member", "hydra:member")) {
-                if ($Value.PSObject.Properties.Name -contains $propertyName) {
-                    return Convert-WorkerArray $Value.$propertyName
+                $property = $null
+                try { $property = $Value.PSObject.Properties[$propertyName] } catch {}
+
+                if ($null -ne $property) {
+                    return Convert-WorkerArray $property.Value
                 }
             }
 
@@ -1083,25 +1122,32 @@ function Get-DashboardData {
     param ([System.Net.HttpListenerContext]$StreamContext = $null)
 
     $started = Get-Date
-
-    $tickets = @(Get-AllOpenItems -ResourcePath $ticketResourcePath -LogLabel "ticket")
-    $problems = @(Get-AllOpenItems -ResourcePath $problemResourcePath -LogLabel "problemi")
-    $changes = @(Get-AllOpenItems -ResourcePath $changeResourcePath -LogLabel "cambiamenti")
-
-    $stats = Get-DashboardStatsFromTickets -Tickets $tickets
-    $totals = [PSCustomObject]@{
-        chiamate = [int]$tickets.Count
-        problemi = [int]$problems.Count
-        cambiamenti = [int]$changes.Count
+    $allLists = [ordered]@{}
+    $totals = [ordered]@{
+        chiamate = 0
+        problemi = 0
+        cambiamenti = 0
     }
+
+    $stats = $null
+    $ticketTasks = @()
+    $problemTasks = @()
+    $changeTasks = @()
 
     if ($null -ne $StreamContext) {
         Write-NdjsonEvent -Context $StreamContext -Object ([PSCustomObject]@{
-            type = "start"
-            stats = $stats
-            totals = $totals
-            concurrency = $script:taskConcurrency
+            type = "refreshStart"
         })
+    }
+
+    # Ticket list and ticket tasks first.
+    $tickets = @(Get-AllOpenItems -ResourcePath $ticketResourcePath -LogLabel "ticket")
+    $stats = Get-DashboardStatsFromTickets -Tickets $tickets
+    $ticketListViews = Get-TicketListViews -Tickets $tickets
+    $totals.chiamate = [int]$tickets.Count
+
+    foreach ($property in $ticketListViews.PSObject.Properties) {
+        $allLists[$property.Name] = @($property.Value)
     }
 
     if ($null -ne $StreamContext) {
@@ -1109,6 +1155,9 @@ function Get-DashboardData {
             type = "categoryStart"
             category = "chiamate"
             total = $tickets.Count
+            stats = $stats
+            totalsPatch = [PSCustomObject]@{ chiamate = [int]$tickets.Count }
+            listViews = $ticketListViews
         })
     }
 
@@ -1124,7 +1173,17 @@ function Get-DashboardData {
             type = "categoryResult"
             category = "chiamate"
             items = @($ticketTasks)
+            updatedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         })
+    }
+
+    # Problems are fetched and displayed only after ticket tasks have finished.
+    $problems = @(Get-AllOpenItems -ResourcePath $problemResourcePath -LogLabel "problemi")
+    $problemListViews = Get-ProblemListViews -Problems $problems
+    $totals.problemi = [int]$problems.Count
+
+    foreach ($property in $problemListViews.PSObject.Properties) {
+        $allLists[$property.Name] = @($property.Value)
     }
 
     if ($null -ne $StreamContext) {
@@ -1132,6 +1191,8 @@ function Get-DashboardData {
             type = "categoryStart"
             category = "problemi"
             total = $problems.Count
+            totalsPatch = [PSCustomObject]@{ problemi = [int]$problems.Count }
+            listViews = $problemListViews
         })
     }
 
@@ -1147,7 +1208,17 @@ function Get-DashboardData {
             type = "categoryResult"
             category = "problemi"
             items = @($problemTasks)
+            updatedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         })
+    }
+
+    # Changes are fetched and displayed last.
+    $changes = @(Get-AllOpenItems -ResourcePath $changeResourcePath -LogLabel "cambiamenti")
+    $changeListViews = Get-ChangeListViews -Changes $changes
+    $totals.cambiamenti = [int]$changes.Count
+
+    foreach ($property in $changeListViews.PSObject.Properties) {
+        $allLists[$property.Name] = @($property.Value)
     }
 
     if ($null -ne $StreamContext) {
@@ -1155,6 +1226,8 @@ function Get-DashboardData {
             type = "categoryStart"
             category = "cambiamenti"
             total = $changes.Count
+            totalsPatch = [PSCustomObject]@{ cambiamenti = [int]$changes.Count }
+            listViews = $changeListViews
         })
     }
 
@@ -1170,10 +1243,12 @@ function Get-DashboardData {
             type = "categoryResult"
             category = "cambiamenti"
             items = @($changeTasks)
+            updatedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         })
     }
 
     $elapsedMs = [int]((Get-Date) - $started).TotalMilliseconds
+    $updatedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 
     Write-Log -Level INFO -Message "Dashboard aggiornata" -Data @{
         openTickets = $tickets.Count
@@ -1187,11 +1262,12 @@ function Get-DashboardData {
 
     return [PSCustomObject]@{
         stats = $stats
-        totals = $totals
+        totals = [PSCustomObject]$totals
         chiamate = @($ticketTasks)
         problemi = @($problemTasks)
         cambiamenti = @($changeTasks)
-        aggiornatoAlle = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        lists = [PSCustomObject]$allLists
+        aggiornatoAlle = $updatedAt
         durataMs = $elapsedMs
     }
 }
@@ -1207,23 +1283,133 @@ function New-ListRow {
         [string]$FormPath
     )
 
-    $id = Get-IdValue (Get-PropValue $Item @("id"))
+    $id = Get-IdValue (Get-PropValue -Object $Item -Names @("id"))
     if ($null -eq $id) { return $null }
 
-    $title = Get-PropValue $Item @("name", "title")
+    $title = Get-PropValue -Object $Item -Names @("name", "title")
     if (-not $title) { $title = "(senza titolo)" }
 
-    $typeText = if ($Kind -eq "ticket") { Get-TicketTypeText $Item } else { $Kind }
-    $updatedDate = Get-ItemDate $Item @("date_mod", "date_creation", "date")
+    $typeText = if ($Kind -eq "ticket") {
+        Get-TicketTypeText -Ticket $Item
+    }
+    elseif ($Kind -eq "problem") {
+        "Problema"
+    }
+    elseif ($Kind -eq "change") {
+        "Cambiamento"
+    }
+    else {
+        $Kind
+    }
+
+    $updatedDate = Get-ItemDate -Item $Item -FieldNames @("date_mod", "date_creation", "date")
 
     return [PSCustomObject]@{
         id = [int]$id
         title = [string]$title
-        status = Get-ItemStatusText $Item
+        status = Get-ItemStatusText -Item $Item
         type = [string]$typeText
-        updatedAt = Format-DateValue $updatedDate
+        updatedAt = Format-DateValue -Date $updatedDate
         sortDate = $updatedDate
         url = "{0}{1}?id={2}" -f $script:glpiWebBaseUrl.TrimEnd("/"), $FormPath, [int]$id
+    }
+}
+
+function Convert-ItemsToListRows {
+    param (
+        [array]$Items,
+        [string]$Kind,
+        [string]$FormPath
+    )
+
+    $rows = @(
+        foreach ($item in $Items) {
+            $row = New-ListRow -Item $item -Kind $Kind -FormPath $FormPath
+            if ($null -ne $row) { $row }
+        }
+    )
+
+    return @(
+        $rows |
+            Sort-Object `
+                @{ Expression = { $_.sortDate }; Descending = $true }, `
+                @{ Expression = { $_.id }; Descending = $true } |
+            Select-Object id, title, status, type, updatedAt, url
+    )
+}
+
+function Get-TicketListViews {
+    param ([array]$Tickets)
+
+    $newIncidents = @(
+        $Tickets | Where-Object {
+            (Get-TicketStatusId -Ticket $_) -eq 1 -and
+            (Get-TicketTypeId -Ticket $_) -eq 1
+        }
+    )
+
+    $newRequests = @(
+        $Tickets | Where-Object {
+            (Get-TicketStatusId -Ticket $_) -eq 1 -and
+            (Get-TicketTypeId -Ticket $_) -eq 2
+        }
+    )
+
+    $assignedToMe = @(
+        $Tickets | Where-Object {
+            Test-TeamAssignedToUser -Item $_ -UserId $script:targetUserId
+        }
+    )
+
+    $allRows = @(Convert-ItemsToListRows -Items $Tickets -Kind "ticket" -FormPath "/front/ticket.form.php")
+
+    return [PSCustomObject][ordered]@{
+        "totali-aperti" = @($allRows)
+        "nuovi-incidenti" = @(Convert-ItemsToListRows -Items $newIncidents -Kind "ticket" -FormPath "/front/ticket.form.php")
+        "nuove-richieste" = @(Convert-ItemsToListRows -Items $newRequests -Kind "ticket" -FormPath "/front/ticket.form.php")
+        "assegnati-a-me" = @(Convert-ItemsToListRows -Items $assignedToMe -Kind "ticket" -FormPath "/front/ticket.form.php")
+        "chiamate" = @($allRows)
+    }
+}
+
+function Get-ProblemListViews {
+    param ([array]$Problems)
+
+    return [PSCustomObject][ordered]@{
+        "problemi" = @(
+            Convert-ItemsToListRows `
+                -Items $Problems `
+                -Kind "problem" `
+                -FormPath "/front/problem.form.php"
+        )
+    }
+}
+
+function Get-ChangeListViews {
+    param ([array]$Changes)
+
+    return [PSCustomObject][ordered]@{
+        "cambiamenti" = @(
+            Convert-ItemsToListRows `
+                -Items $Changes `
+                -Kind "change" `
+                -FormPath "/front/change.form.php"
+        )
+    }
+}
+
+function Get-ListViewTitle {
+    param ([string]$View)
+
+    switch ($View) {
+        "totali-aperti" { return "Totali aperti" }
+        "nuovi-incidenti" { return "Nuovi incidenti" }
+        "nuove-richieste" { return "Nuove richieste" }
+        "assegnati-a-me" { return "Assegnati a me" }
+        "chiamate" { return "Chiamate" }
+        "problemi" { return "Problemi" }
+        "cambiamenti" { return "Cambiamenti" }
+        default { return "Elenco GLPI" }
     }
 }
 
@@ -1231,86 +1417,80 @@ function Get-ListData {
     param ([string]$View)
 
     $normalizedView = ($View + "").Trim().ToLowerInvariant()
-    $items = @()
-    $kind = "ticket"
-    $formPath = "/front/ticket.form.php"
-    $title = "Totali aperti"
+    $validViews = @(
+        "totali-aperti",
+        "nuovi-incidenti",
+        "nuove-richieste",
+        "assegnati-a-me",
+        "chiamate",
+        "problemi",
+        "cambiamenti"
+    )
 
-    switch ($normalizedView) {
-        "totali-aperti" {
-            $items = @(Get-AllOpenItems -ResourcePath $ticketResourcePath -LogLabel "ticket")
-            $title = "Totali aperti"
-        }
-
-        "nuovi-incidenti" {
-            $items = @(
-                Get-AllOpenItems -ResourcePath $ticketResourcePath -LogLabel "ticket" |
-                    Where-Object { (Get-TicketStatusId $_) -eq 1 -and (Get-TicketTypeId $_) -eq 1 }
-            )
-            $title = "Nuovi incidenti"
-        }
-
-        "nuove-richieste" {
-            $items = @(
-                Get-AllOpenItems -ResourcePath $ticketResourcePath -LogLabel "ticket" |
-                    Where-Object { (Get-TicketStatusId $_) -eq 1 -and (Get-TicketTypeId $_) -eq 2 }
-            )
-            $title = "Nuove richieste"
-        }
-
-        "assegnati-a-me" {
-            $items = @(
-                Get-AllOpenItems -ResourcePath $ticketResourcePath -LogLabel "ticket" |
-                    Where-Object { Test-TeamAssignedToUser -Item $_ -UserId $script:targetUserId }
-            )
-            $title = "Assegnati a me"
-        }
-
-        "chiamate" {
-            $items = @(Get-AllOpenItems -ResourcePath $ticketResourcePath -LogLabel "ticket")
-            $title = "Attività chiamate"
-        }
-
-        "problemi" {
-            $items = @(Get-AllOpenItems -ResourcePath $problemResourcePath -LogLabel "problemi")
-            $kind = "Problema"
-            $formPath = "/front/problem.form.php"
-            $title = "Attività problemi"
-        }
-
-        "cambiamenti" {
-            $items = @(Get-AllOpenItems -ResourcePath $changeResourcePath -LogLabel "cambiamenti")
-            $kind = "Cambiamento"
-            $formPath = "/front/change.form.php"
-            $title = "Attività cambiamenti"
-        }
-
-        default {
-            throw "Vista elenco non valida: $View"
-        }
+    if ($validViews -notcontains $normalizedView) {
+        throw "Vista elenco non valida: $View"
     }
 
-    $rows = @(
-        foreach ($item in $items) {
-            $row = New-ListRow -Item $item -Kind $kind -FormPath $formPath
-            if ($null -ne $row) { $row }
-        }
-    )
+    $relatedViews = $null
+    $stats = $null
+    $totalsPatch = [ordered]@{}
+    $tasksPatch = [ordered]@{}
 
-    $publicRows = @(
-        $rows |
-            Sort-Object `
-                @{ Expression = { $_.sortDate }; Descending = $true }, `
-                @{ Expression = { $_.id }; Descending = $true } |
-            Select-Object id, title, status, type, updatedAt, url
-    )
+    if ($normalizedView -in @("totali-aperti", "nuovi-incidenti", "nuove-richieste", "assegnati-a-me", "chiamate")) {
+        # Refresh only tickets and their assigned unfinished tasks.
+        # One ticket-list call updates every ticket-derived view.
+        $tickets = @(Get-AllOpenItems -ResourcePath $ticketResourcePath -LogLabel "ticket")
+        $relatedViews = Get-TicketListViews -Tickets $tickets
+        $stats = Get-DashboardStatsFromTickets -Tickets $tickets
+        $totalsPatch.chiamate = [int]$tickets.Count
+        $tasksPatch.chiamate = @(
+            Invoke-TaskCategoryScan `
+                -Items $tickets `
+                -Category "chiamate" `
+                -TaskEndpointTemplate $ticketTaskEndpointTemplate `
+                -FormPath "/front/ticket.form.php"
+        )
+    }
+    elseif ($normalizedView -eq "problemi") {
+        # Refresh only problems and their assigned unfinished tasks.
+        $problems = @(Get-AllOpenItems -ResourcePath $problemResourcePath -LogLabel "problemi")
+        $relatedViews = Get-ProblemListViews -Problems $problems
+        $totalsPatch.problemi = [int]$problems.Count
+        $tasksPatch.problemi = @(
+            Invoke-TaskCategoryScan `
+                -Items $problems `
+                -Category "problemi" `
+                -TaskEndpointTemplate $problemTaskEndpointTemplate `
+                -FormPath "/front/problem.form.php"
+        )
+    }
+    else {
+        # Refresh only changes and their assigned unfinished tasks.
+        $changes = @(Get-AllOpenItems -ResourcePath $changeResourcePath -LogLabel "cambiamenti")
+        $relatedViews = Get-ChangeListViews -Changes $changes
+        $totalsPatch.cambiamenti = [int]$changes.Count
+        $tasksPatch.cambiamenti = @(
+            Invoke-TaskCategoryScan `
+                -Items $changes `
+                -Category "cambiamenti" `
+                -TaskEndpointTemplate $changeTaskEndpointTemplate `
+                -FormPath "/front/change.form.php"
+        )
+    }
+
+    $selectedItems = @(Get-PropValue -Object $relatedViews -Names @($normalizedView))
+    $updatedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 
     return [PSCustomObject]@{
         view = $normalizedView
-        title = $title
-        count = $publicRows.Count
-        items = @($publicRows)
-        aggiornatoAlle = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        title = Get-ListViewTitle -View $normalizedView
+        count = $selectedItems.Count
+        items = @($selectedItems)
+        relatedViews = $relatedViews
+        stats = $stats
+        totalsPatch = [PSCustomObject]$totalsPatch
+        tasksPatch = [PSCustomObject]$tasksPatch
+        aggiornatoAlle = $updatedAt
     }
 }
 

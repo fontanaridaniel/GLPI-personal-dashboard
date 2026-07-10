@@ -91,8 +91,14 @@
     .status-error { color: #b91c1c; font-weight: 700; }
 
     .refresh-button {
+      flex: 0 0 38px;
       width: 38px;
+      min-width: 38px;
+      max-width: 38px;
       height: 38px;
+      min-height: 38px;
+      max-height: 38px;
+      padding: 0;
       border: 1px solid #d1d5db;
       border-radius: 12px;
       background: #ffffff;
@@ -100,9 +106,21 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      overflow: hidden;
+      line-height: 0;
+      appearance: none;
       cursor: pointer;
       box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
       transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
+    }
+
+    .refresh-button svg {
+      display: block;
+      flex: 0 0 19px;
+      width: 19px;
+      height: 19px;
+      transform-origin: 50% 50%;
+      pointer-events: none;
     }
 
     .refresh-button:hover {
@@ -112,8 +130,19 @@
       box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
     }
 
-    .refresh-button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
-    .refresh-button.loading svg { animation: spin 900ms linear infinite; }
+    .refresh-button:disabled,
+    .refresh-button:disabled:hover {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+      background: #ffffff;
+      color: #111827;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+    }
+
+    .refresh-button.loading svg {
+      animation: spin 900ms linear infinite;
+    }
 
     @keyframes spin {
       from { transform: rotate(0deg); }
@@ -190,7 +219,13 @@
     }
 
     tbody tr:last-child td { border-bottom: 0; }
+    tbody tr[data-url] { cursor: pointer; }
     tbody tr:hover { background: #fafafa; }
+    tbody tr:focus-visible {
+      outline: 3px solid rgba(17, 24, 39, 0.18);
+      outline-offset: -3px;
+      background: #fafafa;
+    }
 
     .id-cell {
       width: 88px;
@@ -206,6 +241,38 @@
     }
 
     .title-link:hover { text-decoration: underline; }
+
+    .title-cell-content {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .title-cell-content .title-link {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .activity-badge {
+      flex: 0 0 auto;
+      min-width: 22px;
+      height: 22px;
+      padding: 0 7px;
+      border-radius: 999px;
+      background: #eef0f3;
+      color: #111827;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      line-height: 1;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
     .secondary { color: #6b7280; }
 
     .empty,
@@ -266,15 +333,17 @@
       ? configuredRefreshSeconds
       : 60;
     const REFRESH_MS = REFRESH_SECONDS * 1000;
+    const CACHE_KEY = "personal-glpi-dashboard-cache-v3";
+    const CACHE_VERSION = 3;
 
     const VIEW_CONFIG = {
       "totali-aperti": { title: "Totali aperti", label: "Ticket aperti" },
       "nuovi-incidenti": { title: "Nuovi incidenti", label: "Ticket filtrati" },
       "nuove-richieste": { title: "Nuove richieste", label: "Ticket filtrati" },
       "assegnati-a-me": { title: "Assegnati a me", label: "Ticket assegnati" },
-      "chiamate": { title: "Attività chiamate", label: "Ticket aperti" },
-      "problemi": { title: "Attività problemi", label: "Problemi aperti" },
-      "cambiamenti": { title: "Attività cambiamenti", label: "Cambiamenti aperti" }
+      "chiamate": { title: "Chiamate", label: "Ticket aperti" },
+      "problemi": { title: "Problemi", label: "Problemi aperti" },
+      "cambiamenti": { title: "Cambiamenti", label: "Cambiamenti aperti" }
     };
 
     const view = window.location.pathname.split("/").filter(Boolean).pop() || "totali-aperti";
@@ -287,6 +356,56 @@
     document.title = config.title + " · Personal GLPI Dashboard";
     document.getElementById("page-title").textContent = config.title;
     document.getElementById("list-label").textContent = config.label;
+
+    function createEmptyCache() {
+      return {
+        version: CACHE_VERSION,
+        stats: null,
+        totals: {
+          chiamate: 0,
+          problemi: 0,
+          cambiamenti: 0
+        },
+        tasks: {
+          chiamate: [],
+          problemi: [],
+          cambiamenti: []
+        },
+        lists: {},
+        listUpdatedAt: {},
+        categoryUpdatedAt: {},
+        aggiornatoAlle: null,
+        lastFullRefreshAt: 0
+      };
+    }
+
+    function readCache() {
+      try {
+        const raw = window.sessionStorage.getItem(CACHE_KEY);
+        if (!raw) return null;
+
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.version !== CACHE_VERSION) return null;
+
+        return parsed;
+      } catch (error) {
+        console.warn("Impossibile leggere la cache dashboard", error);
+        return null;
+      }
+    }
+
+    let dashboardCache = readCache() || createEmptyCache();
+
+    function saveCache() {
+      try {
+        window.sessionStorage.setItem(
+          CACHE_KEY,
+          JSON.stringify(dashboardCache)
+        );
+      } catch (error) {
+        console.warn("Impossibile salvare la cache dashboard", error);
+      }
+    }
 
     function nowText() {
       return new Date().toLocaleTimeString("it-IT", {
@@ -311,32 +430,91 @@
     }
 
     function updateCountdown() {
-      const remainingSeconds = Math.ceil(Math.max(0, nextRefreshAt - Date.now()) / 1000);
+      const remainingSeconds = Math.ceil(
+        Math.max(0, nextRefreshAt - Date.now()) / 1000
+      );
+
       document.getElementById("countdown").textContent =
         "Prossimo aggiornamento tra " + remainingSeconds + " secondi";
     }
 
-    function scheduleNextRefresh() {
-      nextRefreshAt = Date.now() + REFRESH_MS;
+    function scheduleNextRefresh(delayMs = REFRESH_MS) {
+      const safeDelay = Math.max(0, Number(delayMs) || 0);
+      nextRefreshAt = Date.now() + safeDelay;
+
       if (refreshTimer) window.clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(() => refreshList("timer"), REFRESH_MS);
+      refreshTimer = window.setTimeout(() => refreshList("timer"), safeDelay);
       updateCountdown();
     }
 
     function forceRefresh() {
       if (isRefreshing) return;
+
       if (refreshTimer) {
         window.clearTimeout(refreshTimer);
         refreshTimer = null;
       }
+
       refreshList("manuale");
     }
 
-    function renderRows(items) {
-      const container = document.getElementById("table-container");
-      document.getElementById("item-count").textContent = String(items.length);
+    function mergeTotalsPatch(patch) {
+      if (!patch || typeof patch !== "object") return;
 
-      if (!items.length) {
+      dashboardCache.totals = dashboardCache.totals || {};
+
+      for (const category of ["chiamate", "problemi", "cambiamenti"]) {
+        if (Object.prototype.hasOwnProperty.call(patch, category)) {
+          dashboardCache.totals[category] = Number(patch[category]) || 0;
+        }
+      }
+    }
+
+    function mergeRelatedViews(relatedViews, timestamp = Date.now()) {
+      if (!relatedViews || typeof relatedViews !== "object") return;
+
+      dashboardCache.lists = dashboardCache.lists || {};
+      dashboardCache.listUpdatedAt = dashboardCache.listUpdatedAt || {};
+
+      for (const [relatedView, items] of Object.entries(relatedViews)) {
+        dashboardCache.lists[relatedView] = Array.isArray(items) ? items : [];
+        dashboardCache.listUpdatedAt[relatedView] = timestamp;
+      }
+    }
+
+    function getCategoryForView(currentView) {
+      if (["totali-aperti", "nuovi-incidenti", "nuove-richieste", "assegnati-a-me", "chiamate"].includes(currentView)) {
+        return "chiamate";
+      }
+
+      if (currentView === "problemi") return "problemi";
+      if (currentView === "cambiamenti") return "cambiamenti";
+      return null;
+    }
+
+    function getActivityCountsByParent(category) {
+      const counts = new Map();
+      const tasks = dashboardCache.tasks && Array.isArray(dashboardCache.tasks[category])
+        ? dashboardCache.tasks[category]
+        : [];
+
+      for (const task of tasks) {
+        const key = String(task.parentId);
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+
+      return counts;
+    }
+
+    function renderRows(items) {
+      const safeItems = Array.isArray(items) ? items : [];
+      const container = document.getElementById("table-container");
+      const category = getCategoryForView(view);
+      const activityCounts = getActivityCountsByParent(category);
+
+      document.getElementById("item-count").textContent = String(safeItems.length);
+
+      if (!safeItems.length) {
         container.innerHTML = '<div class="empty">Nessun elemento trovato</div>';
         return;
       }
@@ -353,21 +531,60 @@
       });
       thead.appendChild(headerRow);
 
-      for (const item of items) {
+      for (const item of safeItems) {
         const row = document.createElement("tr");
+        row.dataset.url = item.url || "";
+        row.tabIndex = 0;
+        row.setAttribute("role", "link");
+        row.setAttribute("aria-label", "Apri " + (item.title || "elemento GLPI"));
+
+        const openItem = () => {
+          if (!item.url) return;
+          window.open(item.url, "_blank", "noopener,noreferrer");
+        };
+
+        row.addEventListener("click", event => {
+          if (event.target.closest("a")) return;
+          openItem();
+        });
+
+        row.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openItem();
+          }
+        });
 
         const idCell = document.createElement("td");
         idCell.className = "id-cell";
         idCell.textContent = "#" + item.id;
 
         const titleCell = document.createElement("td");
+        const titleContent = document.createElement("div");
+        titleContent.className = "title-cell-content";
+
         const link = document.createElement("a");
         link.className = "title-link";
         link.href = item.url;
         link.target = "_blank";
         link.rel = "noopener noreferrer";
         link.textContent = item.title || "(senza titolo)";
-        titleCell.appendChild(link);
+        titleContent.appendChild(link);
+
+        const activityCount = activityCounts.get(String(item.id)) || 0;
+
+        if (activityCount > 0) {
+          const badge = document.createElement("span");
+          badge.className = "activity-badge";
+          badge.textContent = String(activityCount);
+          badge.title = activityCount === 1
+            ? "1 attività assegnata"
+            : activityCount + " attività assegnate";
+          badge.setAttribute("aria-label", badge.title);
+          titleContent.appendChild(badge);
+        }
+
+        titleCell.appendChild(titleContent);
 
         const statusCell = document.createElement("td");
         statusCell.className = "secondary";
@@ -395,6 +612,44 @@
       container.appendChild(table);
     }
 
+    async function readErrorDetails(response) {
+      try {
+        const contentType = response.headers.get("content-type") || "";
+        return contentType.includes("application/json")
+          ? await response.json()
+          : await response.text();
+      } catch (error) {
+        return "Impossibile leggere il dettaglio errore: " + error.message;
+      }
+    }
+
+    function updateCacheFromResponse(data) {
+      const timestamp = Date.now();
+
+      mergeRelatedViews(data.relatedViews, timestamp);
+      mergeTotalsPatch(data.totalsPatch);
+
+      if (data.tasksPatch && typeof data.tasksPatch === "object") {
+        dashboardCache.tasks = dashboardCache.tasks || {};
+        dashboardCache.categoryUpdatedAt = dashboardCache.categoryUpdatedAt || {};
+
+        for (const category of ["chiamate", "problemi", "cambiamenti"]) {
+          if (Object.prototype.hasOwnProperty.call(data.tasksPatch, category)) {
+            dashboardCache.tasks[category] = Array.isArray(data.tasksPatch[category])
+              ? data.tasksPatch[category]
+              : [];
+            dashboardCache.categoryUpdatedAt[category] = timestamp;
+          }
+        }
+      }
+
+      if (data.stats) {
+        dashboardCache.stats = data.stats;
+      }
+
+      saveCache();
+    }
+
     async function refreshList(source) {
       if (isRefreshing) return;
 
@@ -403,21 +658,36 @@
       setStatus("Aggiornamento in corso...", "info");
 
       try {
-        const response = await fetch("/api/list?view=" + encodeURIComponent(view) + "&ts=" + Date.now(), {
-          method: "GET",
-          cache: "no-store"
-        });
+        const response = await fetch(
+          "/api/list?view=" + encodeURIComponent(view) + "&ts=" + Date.now(),
+          {
+            method: "GET",
+            cache: "no-store"
+          }
+        );
 
         if (!response.ok) {
-          throw new Error("HTTP " + response.status + " " + response.statusText);
+          const details = await readErrorDetails(response);
+          throw {
+            message: "HTTP " + response.status + " " + response.statusText,
+            details
+          };
         }
 
         const data = await response.json();
+        updateCacheFromResponse(data);
         renderRows(Array.isArray(data.items) ? data.items : []);
-        setStatus("Aggiornato alle " + (data.aggiornatoAlle || nowText()), "ok");
+
+        setStatus(
+          "Aggiornato alle " + (data.aggiornatoAlle || nowText()),
+          "ok"
+        );
       } catch (error) {
         console.error("Errore elenco", error);
-        setStatus("Errore aggiornamento: " + (error.message || String(error)), "error");
+        setStatus(
+          "Errore aggiornamento: " + (error.message || String(error)),
+          "error"
+        );
       } finally {
         isRefreshing = false;
         setButtonLoading(false);
@@ -425,9 +695,62 @@
       }
     }
 
+    function getNavigationType() {
+      const entries = performance.getEntriesByType
+        ? performance.getEntriesByType("navigation")
+        : [];
+
+      return entries.length ? entries[0].type : "navigate";
+    }
+
+    function initializeList() {
+      const navigationType = getNavigationType();
+      const cachedItems = dashboardCache.lists && dashboardCache.lists[view];
+      const cacheAvailable = Array.isArray(cachedItems);
+
+      if (cacheAvailable) {
+        renderRows(cachedItems);
+
+        const cachedTimestamp = Number(
+          dashboardCache.listUpdatedAt && dashboardCache.listUpdatedAt[view]
+        );
+
+        const cachedTime = Number.isFinite(cachedTimestamp) && cachedTimestamp > 0
+          ? new Date(cachedTimestamp).toLocaleTimeString("it-IT", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit"
+            })
+          : nowText();
+
+        setStatus("Dati disponibili alle " + cachedTime, "ok");
+      }
+
+      // Normal navigation from the dashboard reuses the already loaded data.
+      // A real browser reload intentionally refreshes only this resource type.
+      if (navigationType !== "reload" && cacheAvailable) {
+        scheduleNextRefresh();
+        return;
+      }
+
+      refreshList("iniziale");
+    }
+
     document.getElementById("force-refresh").addEventListener("click", forceRefresh);
     window.setInterval(updateCountdown, 500);
-    refreshList("iniziale");
+
+    window.addEventListener("pageshow", function (event) {
+      if (!event.persisted) return;
+
+      const latestCache = readCache();
+      if (!latestCache) return;
+
+      dashboardCache = latestCache;
+      const cachedItems = dashboardCache.lists && dashboardCache.lists[view];
+      if (Array.isArray(cachedItems)) renderRows(cachedItems);
+    });
+
+    initializeList();
   </script>
 </body>
 </html>
