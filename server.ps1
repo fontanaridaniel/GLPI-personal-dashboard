@@ -1934,6 +1934,14 @@ function Get-DashboardData {
                 "$script:apiBaseUrl/" +
                 $relativeEndpoint
 
+            # Build the browser URL explicitly.
+            # Using the format operator avoids PowerShell interpreting
+            # "$FormPath?id" as a single variable name.
+            $parentUrl = "{0}{1}?id={2}" -f `
+                $script:glpiWebBaseUrl.TrimEnd("/"),
+                $FormPath,
+                [int]$parentId
+
             $powerShell =
                 [powershell]::Create()
 
@@ -1972,10 +1980,8 @@ function Get-DashboardData {
                     ParentTitle =
                         [string]$parentTitle
 
-                    ParentUrl = (
-                        "$script:glpiWebBaseUrl" +
-                        "$FormPath?id=$parentId"
-                    )
+                    ParentUrl =
+                        $parentUrl
 
                     Endpoint =
                         $endpoint
