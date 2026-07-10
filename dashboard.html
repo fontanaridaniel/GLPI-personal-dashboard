@@ -3,7 +3,6 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-
   <title>Dashboard GLPI</title>
 
   <style>
@@ -109,13 +108,8 @@
     }
 
     @keyframes spin {
-      from {
-        transform: rotate(0deg);
-      }
-
-      to {
-        transform: rotate(360deg);
-      }
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
 
     .cards {
@@ -153,19 +147,14 @@
     }
 
     @keyframes card-invert-pulse {
-      0%,
-      24%,
-      50%,
-      100% {
+      0%, 24%, 50%, 100% {
         background: #ffffff;
         border-color: #e5e7eb;
         transform: translateY(0) scale(1);
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
       }
 
-      12%,
-      38%,
-      64% {
+      12%, 38%, 64% {
         background: #111827;
         border-color: #111827;
         transform: translateY(-4px) scale(1.015);
@@ -174,18 +163,8 @@
     }
 
     @keyframes card-text-pulse {
-      0%,
-      24%,
-      50%,
-      100% {
-        color: inherit;
-      }
-
-      12%,
-      38%,
-      64% {
-        color: #ffffff;
-      }
+      0%, 24%, 50%, 100% { color: inherit; }
+      12%, 38%, 64% { color: #ffffff; }
     }
 
     .stat-title {
@@ -294,7 +273,7 @@
       font-size: 13px;
     }
 
-    .ticket-task-group {
+    .parent-task-group {
       border: 1px solid #e5e7eb;
       border-radius: 12px;
       background: #ffffff;
@@ -306,40 +285,33 @@
         border-color 180ms ease;
     }
 
-    .ticket-task-group.pulse {
-      animation: ticket-group-invert-pulse 2.4s ease-in-out;
+    .parent-task-group.pulse {
+      animation: group-invert-pulse 2.4s ease-in-out;
     }
 
-    .ticket-task-group.pulse .ticket-group-header,
-    .ticket-task-group.pulse .ticket-group-link,
-    .ticket-task-group.pulse .task-row,
-    .ticket-task-group.pulse .task-meta,
-    .ticket-task-group.pulse .task-content {
-      animation: ticket-group-text-pulse 2.4s ease-in-out;
+    .parent-task-group.pulse .parent-group-header,
+    .parent-task-group.pulse .parent-group-link,
+    .parent-task-group.pulse .task-row,
+    .parent-task-group.pulse .task-meta,
+    .parent-task-group.pulse .task-content {
+      animation: group-text-pulse 2.4s ease-in-out;
     }
 
-    .ticket-task-group.pulse .task-row {
-      animation-name:
-        ticket-group-text-pulse,
-        ticket-row-border-pulse;
+    .parent-task-group.pulse .task-row {
+      animation-name: group-text-pulse, task-row-border-pulse;
       animation-duration: 2.4s, 2.4s;
       animation-timing-function: ease-in-out, ease-in-out;
     }
 
-    @keyframes ticket-group-invert-pulse {
-      0%,
-      24%,
-      50%,
-      100% {
+    @keyframes group-invert-pulse {
+      0%, 24%, 50%, 100% {
         background: #ffffff;
         border-color: #e5e7eb;
         transform: translateY(0) scale(1);
         box-shadow: none;
       }
 
-      12%,
-      38%,
-      64% {
+      12%, 38%, 64% {
         background: #111827;
         border-color: #111827;
         transform: translateY(-4px) scale(1.01);
@@ -347,42 +319,22 @@
       }
     }
 
-    @keyframes ticket-group-text-pulse {
-      0%,
-      24%,
-      50%,
-      100% {
-        color: inherit;
-      }
-
-      12%,
-      38%,
-      64% {
-        color: #ffffff;
-      }
+    @keyframes group-text-pulse {
+      0%, 24%, 50%, 100% { color: inherit; }
+      12%, 38%, 64% { color: #ffffff; }
     }
 
-    @keyframes ticket-row-border-pulse {
-      0%,
-      24%,
-      50%,
-      100% {
-        border-top-color: #e5e7eb;
-      }
-
-      12%,
-      38%,
-      64% {
-        border-top-color: #4b5563;
-      }
+    @keyframes task-row-border-pulse {
+      0%, 24%, 50%, 100% { border-top-color: #e5e7eb; }
+      12%, 38%, 64% { border-top-color: #4b5563; }
     }
 
-    .ticket-group-header {
+    .parent-group-header {
       padding: 10px 11px 8px;
       border-bottom: 1px solid #f0f0f0;
     }
 
-    .ticket-group-link {
+    .parent-group-link {
       display: inline-block;
       color: #111827;
       font-size: 13px;
@@ -390,7 +342,7 @@
       text-decoration: none;
     }
 
-    .ticket-group-link:hover {
+    .parent-group-link:hover {
       text-decoration: underline;
     }
 
@@ -490,19 +442,16 @@
           <div class="activity-title">
             <span class="activity-title-label">
               Attività chiamate -
-              <span
-                class="activity-title-total"
-                id="total-chiamate"
-              >0</span>
+              <span class="activity-title-total" id="total-chiamate">0</span>
             </span>
 
             <span
               class="activity-progress"
-              id="tasks-progress"
+              id="progress-chiamate"
               aria-live="polite"
               hidden
             >
-              <span id="tasks-progress-text">0/0</span>
+              <span id="progress-chiamate-text">0/0</span>
 
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
@@ -522,15 +471,28 @@
           <div class="activity-title">
             <span class="activity-title-label">
               Attività problemi -
-              <span
-                class="activity-title-total"
-                id="total-problemi"
-              >0</span>
+              <span class="activity-title-total" id="total-problemi">0</span>
+            </span>
+
+            <span
+              class="activity-progress"
+              id="progress-problemi"
+              aria-live="polite"
+              hidden
+            >
+              <span id="progress-problemi-text">0/0</span>
+
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"
+                />
+              </svg>
             </span>
           </div>
 
           <div class="activity-list" id="tasks-problemi">
-            <div class="empty">Nessuna attività trovata</div>
+            <div class="empty">Caricamento attività...</div>
           </div>
         </article>
 
@@ -538,10 +500,7 @@
           <div class="activity-title">
             <span class="activity-title-label">
               Attività cambiamenti -
-              <span
-                class="activity-title-total"
-                id="total-cambiamenti"
-              >0</span>
+              <span class="activity-title-total" id="total-cambiamenti">0</span>
             </span>
           </div>
 
@@ -554,8 +513,7 @@
   </main>
 
   <script>
-    const configuredRefreshSeconds =
-      Number("__AUTO_REFRESH_SECONDS__");
+    const configuredRefreshSeconds = Number("__AUTO_REFRESH_SECONDS__");
 
     const REFRESH_SECONDS =
       Number.isFinite(configuredRefreshSeconds) &&
@@ -574,7 +532,10 @@
       nuoviIncidenti: null,
       nuoveRichieste: null,
       assegnatiAMe: null,
-      chiamateTaskIdsByTicket: null
+      taskIdsByParent: {
+        chiamate: null,
+        problemi: null
+      }
     };
 
     function nowText() {
@@ -620,19 +581,40 @@
         String(Number(values.cambiamenti) || 0);
     }
 
-    function showTaskProgress(completed, total) {
-      const progress = document.getElementById("tasks-progress");
-      const text = document.getElementById("tasks-progress-text");
+    function showProgress(category, completed, total) {
+      const progress = document.getElementById(
+        "progress-" + category
+      );
+
+      const text = document.getElementById(
+        "progress-" + category + "-text"
+      );
+
+      if (!progress || !text) {
+        return;
+      }
 
       progress.hidden = false;
+
       text.textContent =
         String(Number(completed) || 0) +
         "/" +
         String(Number(total) || 0);
     }
 
-    function hideTaskProgress() {
-      document.getElementById("tasks-progress").hidden = true;
+    function hideProgress(category) {
+      const progress = document.getElementById(
+        "progress-" + category
+      );
+
+      if (progress) {
+        progress.hidden = true;
+      }
+    }
+
+    function hideAllProgress() {
+      hideProgress("chiamate");
+      hideProgress("problemi");
     }
 
     function pulseElement(element) {
@@ -696,6 +678,7 @@
 
     function updateCountdown() {
       const countdownEl = document.getElementById("countdown");
+
       const remainingMs = Math.max(
         0,
         nextRefreshAt - Date.now()
@@ -748,7 +731,8 @@
         }
 
         return await response.text();
-      } catch (error) {
+      }
+      catch (error) {
         return (
           "Impossibile leggere il dettaglio errore: " +
           error.message
@@ -756,7 +740,29 @@
       }
     }
 
-    function groupTasksByTicket(tasks) {
+    function normalizeParent(task) {
+      return {
+        parentId:
+          task.parentId ??
+          task.ticketId ??
+          task.problemId ??
+          task.changeId,
+
+        parentTitle:
+          task.parentTitle ??
+          task.ticketTitle ??
+          task.problemTitle ??
+          task.changeTitle,
+
+        parentUrl:
+          task.parentUrl ??
+          task.ticketUrl ??
+          task.problemUrl ??
+          task.changeUrl
+      };
+    }
+
+    function groupTasksByParent(tasks) {
       const groups = new Map();
 
       if (!Array.isArray(tasks)) {
@@ -764,29 +770,30 @@
       }
 
       for (const task of tasks) {
-        const ticketKey = String(task.ticketId);
+        const parent = normalizeParent(task);
+        const parentKey = String(parent.parentId);
 
-        if (!groups.has(ticketKey)) {
-          groups.set(ticketKey, {
-            ticketId: task.ticketId,
-            ticketTitle: task.ticketTitle,
-            ticketUrl: task.ticketUrl,
+        if (!groups.has(parentKey)) {
+          groups.set(parentKey, {
+            parentId: parent.parentId,
+            parentTitle: parent.parentTitle,
+            parentUrl: parent.parentUrl,
             tasks: []
           });
         }
 
-        groups.get(ticketKey).tasks.push(task);
+        groups.get(parentKey).tasks.push(task);
       }
 
       return groups;
     }
 
-    function getTaskIdsByTicket(groups) {
+    function getTaskIdsByParent(groups) {
       const result = new Map();
 
-      for (const [ticketKey, group] of groups.entries()) {
+      for (const [parentKey, group] of groups.entries()) {
         result.set(
-          ticketKey,
+          parentKey,
           new Set(
             group.tasks.map(function (task) {
               return String(task.taskId);
@@ -798,43 +805,50 @@
       return result;
     }
 
-    function getTicketsWithNewTasks(nextTaskIdsByTicket) {
-      const ticketsWithNewTasks = new Set();
+    function getParentsWithNewTasks(
+      category,
+      nextTaskIdsByParent
+    ) {
+      const parentsWithNewTasks = new Set();
+      const oldMap = previous.taskIdsByParent[category];
 
-      if (previous.chiamateTaskIdsByTicket === null) {
-        return ticketsWithNewTasks;
+      if (oldMap === null) {
+        return parentsWithNewTasks;
       }
 
       for (
-        const [ticketKey, nextTaskIds]
-        of nextTaskIdsByTicket.entries()
+        const [parentKey, nextTaskIds]
+        of nextTaskIdsByParent.entries()
       ) {
         const previousTaskIds =
-          previous.chiamateTaskIdsByTicket.get(ticketKey) ||
-          new Set();
+          oldMap.get(parentKey) || new Set();
 
         for (const taskId of nextTaskIds.values()) {
           if (!previousTaskIds.has(taskId)) {
-            ticketsWithNewTasks.add(ticketKey);
+            parentsWithNewTasks.add(parentKey);
             break;
           }
         }
       }
 
-      return ticketsWithNewTasks;
+      return parentsWithNewTasks;
     }
 
-    function renderChiamateTasks(tasks) {
-      const container =
-        document.getElementById("tasks-chiamate");
+    function renderActivityTasks(category, tasks) {
+      const container = document.getElementById(
+        "tasks-" + category
+      );
 
-      const groups = groupTasksByTicket(tasks);
+      const groups = groupTasksByParent(tasks);
 
-      const nextTaskIdsByTicket =
-        getTaskIdsByTicket(groups);
+      const nextTaskIdsByParent =
+        getTaskIdsByParent(groups);
 
-      const ticketsWithNewTasks =
-        getTicketsWithNewTasks(nextTaskIdsByTicket);
+      const parentsWithNewTasks =
+        getParentsWithNewTasks(
+          category,
+          nextTaskIdsByParent
+        );
 
       container.innerHTML = "";
 
@@ -842,29 +856,33 @@
         container.innerHTML =
           '<div class="empty">Nessuna attività trovata</div>';
 
-        previous.chiamateTaskIdsByTicket =
-          nextTaskIdsByTicket;
+        previous.taskIdsByParent[category] =
+          nextTaskIdsByParent;
 
         return;
       }
 
-      for (const [ticketKey, group] of groups.entries()) {
+      for (
+        const [parentKey, group]
+        of groups.entries()
+      ) {
         const groupEl = document.createElement("div");
-        groupEl.className = "ticket-task-group";
+        groupEl.className = "parent-task-group";
 
         const header = document.createElement("div");
-        header.className = "ticket-group-header";
+        header.className = "parent-group-header";
 
         const link = document.createElement("a");
-        link.className = "ticket-group-link";
-        link.href = group.ticketUrl;
+        link.className = "parent-group-link";
+        link.href = group.parentUrl;
         link.target = "_blank";
         link.rel = "noopener noreferrer";
+
         link.textContent =
           "#" +
-          group.ticketId +
+          group.parentId +
           " - " +
-          group.ticketTitle;
+          (group.parentTitle || "(senza titolo)");
 
         header.appendChild(link);
         groupEl.appendChild(header);
@@ -875,6 +893,7 @@
 
           const meta = document.createElement("div");
           meta.className = "task-meta";
+
           meta.textContent =
             "Task #" +
             task.taskId +
@@ -883,6 +902,7 @@
 
           const content = document.createElement("div");
           content.className = "task-content";
+
           content.textContent =
             task.content || "(senza contenuto)";
 
@@ -893,13 +913,13 @@
 
         container.appendChild(groupEl);
 
-        if (ticketsWithNewTasks.has(ticketKey)) {
+        if (parentsWithNewTasks.has(parentKey)) {
           pulseElement(groupEl);
         }
       }
 
-      previous.chiamateTaskIdsByTicket =
-        nextTaskIdsByTicket;
+      previous.taskIdsByParent[category] =
+        nextTaskIdsByParent;
     }
 
     async function fetchDashboardFallback() {
@@ -971,15 +991,29 @@
         if (event.type === "start") {
           setActivityTotals(event.totals);
           applyStats(event.stats);
-          showTaskProgress(0, event.total || 0);
+
+          showProgress(
+            "chiamate",
+            0,
+            event.totals?.chiamate || 0
+          );
+
+          showProgress(
+            "problemi",
+            0,
+            event.totals?.problemi || 0
+          );
+
           return;
         }
 
         if (event.type === "progress") {
-          showTaskProgress(
+          showProgress(
+            event.category,
             event.completed || 0,
             event.total || 0
           );
+
           return;
         }
 
@@ -1003,9 +1037,10 @@
           break;
         }
 
-        buffer += decoder.decode(chunk.value, {
-          stream: true
-        });
+        buffer += decoder.decode(
+          chunk.value,
+          { stream: true }
+        );
 
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
@@ -1046,7 +1081,16 @@
 
         applyStats(dashboardData.stats);
         setActivityTotals(dashboardData.totals);
-        renderChiamateTasks(dashboardData.chiamate);
+
+        renderActivityTasks(
+          "chiamate",
+          dashboardData.chiamate
+        );
+
+        renderActivityTasks(
+          "problemi",
+          dashboardData.problemi
+        );
 
         setStatus(
           "Aggiornato alle " +
@@ -1056,7 +1100,8 @@
           ),
           "ok"
         );
-      } catch (error) {
+      }
+      catch (error) {
         const message =
           error && error.message
             ? error.message
@@ -1071,21 +1116,25 @@
           "Errore aggiornamento: " + message,
           "error"
         );
-      } finally {
-        hideTaskProgress();
+      }
+      finally {
+        hideAllProgress();
         isRefreshing = false;
         setRefreshButtonLoading(false);
         scheduleNextRefresh();
       }
     }
 
-    window.addEventListener("error", function (event) {
-      console.error(
-        "Errore JavaScript:",
-        event.message,
-        event
-      );
-    });
+    window.addEventListener(
+      "error",
+      function (event) {
+        console.error(
+          "Errore JavaScript:",
+          event.message,
+          event
+        );
+      }
+    );
 
     window.addEventListener(
       "unhandledrejection",
@@ -1099,9 +1148,15 @@
 
     document
       .getElementById("force-refresh")
-      .addEventListener("click", forceRefresh);
+      .addEventListener(
+        "click",
+        forceRefresh
+      );
 
-    window.setInterval(updateCountdown, 500);
+    window.setInterval(
+      updateCountdown,
+      500
+    );
 
     aggiornaDashboard("iniziale");
   </script>

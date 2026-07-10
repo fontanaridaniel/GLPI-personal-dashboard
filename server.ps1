@@ -1,5 +1,16 @@
 #requires -Version 5.1
 
+# =========================
+# GLPI LOCAL DASHBOARD SERVER
+# =========================
+# - Local only: 127.0.0.1
+# - Password requested at startup
+# - No private/company URLs hardcoded
+# - Tickets and problems loaded through the High-Level API
+# - Ticket and problem task calls run concurrently
+# - NDJSON progress streamed to the dashboard
+# =========================
+
 $scriptDir = if ($PSScriptRoot) {
     $PSScriptRoot
 }
@@ -11,9 +22,13 @@ $envPath = Join-Path $scriptDir ".env"
 $dashboardPath = Join-Path $scriptDir "dashboard.html"
 $pidPath = Join-Path $scriptDir "dashboard-server.pid.json"
 
-$ticketEndpoint = "Assistance/Ticket"
+$ticketResourcePath = "Assistance/Ticket"
+$problemResourcePath = "Assistance/Problem"
 $ticketTaskEndpointTemplate = "Assistance/Ticket/{0}/Timeline/Task"
-$openTicketFilter = "status.id=out=(5,6);is_deleted==false"
+$problemTaskEndpointTemplate = "Assistance/Problem/{0}/Timeline/Task"
+
+# GLPI status 5 = solved, 6 = closed.
+$openItemFilter = "status.id=out=(5,6);is_deleted==false"
 
 $script:httpListener = $null
 $script:stopRequested = $false
@@ -87,7 +102,7 @@ function Write-Log {
 
     if ($null -ne $Data) {
         try {
-            $json = $Data | ConvertTo-Json -Depth 40
+            $json = $Data | ConvertTo-Json -Depth 50
             Write-Host $json -ForegroundColor DarkGray
         }
         catch {
@@ -193,7 +208,7 @@ function New-ErrorResponseObject {
 }
 
 # =========================
-# CLEANUP
+# CLEANUP / SINGLE INSTANCE
 # =========================
 
 function Remove-CurrentPidFile {
@@ -288,7 +303,9 @@ function Register-DashboardShutdownHandlers {
 
                 try {
                     if ($script:httpListener) {
-                        if ($script:httpListener.IsListening) {
+                        if (
+                            $script:httpListener.IsListening
+                        ) {
                             $script:httpListener.Stop()
                         }
 
@@ -312,25 +329,42 @@ function Register-DashboardShutdownHandlers {
     }
 
     try {
-        $script:exitSubscription = Register-EngineEvent `
-            -SourceIdentifier PowerShell.Exiting `
-            -Action {
-                try {
-                    if ($script:httpListener) {
-                        if ($script:httpListener.IsListening) {
-                            $script:httpListener.Stop()
+        $script:exitSubscription =
+            Register-EngineEvent `
+                -SourceIdentifier PowerShell.Exiting `
+                -Action {
+                    try {
+                        if ($script:httpListener) {
+                            if (
+                                $script:httpListener.IsListening
+                            ) {
+                                $script:httpListener.Stop()
+                            }
+
+                            $script:httpListener.Close()
                         }
-
-                        $script:httpListener.Close()
                     }
-                }
-                catch {}
+                    catch {}
 
-                try {
-                    Remove-CurrentPidFile
+                    try {
+                        if (Test-Path $pidPath) {
+                            $pidData =
+                                Get-Content $pidPath -Raw |
+                                ConvertFrom-Json
+
+                            if (
+                                [int]$pidData.pid -eq
+                                [int]$PID
+                            ) {
+                                Remove-Item `
+                                    $pidPath `
+                                    -Force `
+                                    -ErrorAction SilentlyContinue
+                            }
+                        }
+                    }
+                    catch {}
                 }
-                catch {}
-            }
     }
     catch {
         Write-Log `
@@ -345,11 +379,13 @@ function Register-DashboardShutdownHandlers {
 function Initialize-DashboardSingleInstance {
     if (Test-Path $pidPath) {
         try {
-            $oldPidData = Get-Content $pidPath -Raw |
+            $oldPidData =
+                Get-Content $pidPath -Raw |
                 ConvertFrom-Json
 
             $oldPid = [int]$oldPidData.pid
-            $oldScriptPath = [string]$oldPidData.scriptPath
+            $oldScriptPath =
+                [string]$oldPidData.scriptPath
 
             if ($oldPid -ne $PID) {
                 $oldProcess = Get-CimInstance `
@@ -365,7 +401,8 @@ function Initialize-DashboardSingleInstance {
                         ($commandLine -match "server\.ps1") -or
                         (
                             $oldScriptPath -and
-                            $commandLine -like "*$oldScriptPath*"
+                            $commandLine -like
+                            "*$oldScriptPath*"
                         )
 
                     if ($looksLikeDashboard) {
@@ -403,7 +440,8 @@ function Initialize-DashboardSingleInstance {
 
     $pidObject = [PSCustomObject]@{
         pid = $PID
-        scriptPath = Join-Path $scriptDir "server.ps1"
+        scriptPath =
+            Join-Path $scriptDir "server.ps1"
         folder = $scriptDir
         hostPrefix = $script:hostPrefix
         startedAt = (Get-Date).ToString(
@@ -452,10 +490,11 @@ function Load-Env {
         if ($line -match "^\s*([^#][^=]+)=(.*)$") {
             $key = $matches[1].Trim()
 
-            $value = $matches[2].
-                Trim().
-                Trim('"').
-                Trim("'")
+            $value =
+                $matches[2].
+                    Trim().
+                    Trim('"').
+                    Trim("'")
 
             $envVars[$key] = $value
         }
@@ -516,7 +555,12 @@ function Get-RequiredInt {
 
     $parsed = 0
 
-    if (-not [int]::TryParse($value, [ref]$parsed)) {
+    if (
+        -not [int]::TryParse(
+            $value,
+            [ref]$parsed
+        )
+    ) {
         Write-Log `
             -Level ERROR `
             -Message "$Key deve essere un numero" `
@@ -546,7 +590,12 @@ function Get-OptionalInt {
 
     $parsed = 0
 
-    if (-not [int]::TryParse($value, [ref]$parsed)) {
+    if (
+        -not [int]::TryParse(
+            $value,
+            [ref]$parsed
+        )
+    ) {
         Write-Log `
             -Level ERROR `
             -Message "$Key deve essere un numero" `
@@ -557,7 +606,10 @@ function Get-OptionalInt {
         exit 1
     }
 
-    if ($parsed -lt $Minimum -or $parsed -gt $Maximum) {
+    if (
+        $parsed -lt $Minimum -or
+        $parsed -gt $Maximum
+    ) {
         Write-Log `
             -Level ERROR `
             -Message "$Key deve essere compreso tra $Minimum e $Maximum" `
@@ -576,15 +628,19 @@ function Get-OptionalInt {
 # =========================
 
 function Get-FreeLocalPort {
-    $tcpListener = New-Object `
-        System.Net.Sockets.TcpListener `
-        (
-            [System.Net.IPAddress]::Parse("127.0.0.1"),
-            0
-        )
+    $tcpListener =
+        New-Object `
+            System.Net.Sockets.TcpListener `
+            (
+                [System.Net.IPAddress]::Parse(
+                    "127.0.0.1"
+                ),
+                0
+            )
 
     try {
         $tcpListener.Start()
+
         return [int]$tcpListener.LocalEndpoint.Port
     }
     finally {
@@ -607,7 +663,11 @@ function Resolve-LocalHostPrefix {
         -Key "HOST_PORT" `
         -Default "0"
 
-    if (-not [string]::IsNullOrWhiteSpace($hostValue)) {
+    if (
+        -not [string]::IsNullOrWhiteSpace(
+            $hostValue
+        )
+    ) {
         if (
             -not $hostValue.StartsWith(
                 "http://127.0.0.1:"
@@ -629,7 +689,12 @@ function Resolve-LocalHostPrefix {
 
     $port = 0
 
-    if (-not [int]::TryParse($portValue, [ref]$port)) {
+    if (
+        -not [int]::TryParse(
+            $portValue,
+            [ref]$port
+        )
+    ) {
         Write-Log `
             -Level ERROR `
             -Message "HOST_PORT deve essere un numero"
@@ -653,7 +718,7 @@ function Resolve-LocalHostPrefix {
 }
 
 # =========================
-# HTTP / GLPI
+# AUTHENTICATION / GLPI GET
 # =========================
 
 function New-QueryString {
@@ -661,7 +726,10 @@ function New-QueryString {
         [hashtable]$Params
     )
 
-    if (-not $Params -or $Params.Count -eq 0) {
+    if (
+        -not $Params -or
+        $Params.Count -eq 0
+    ) {
         return ""
     }
 
@@ -670,15 +738,22 @@ function New-QueryString {
     foreach ($key in $Params.Keys) {
         $value = $Params[$key]
 
-        if ($null -eq $value -or "$value" -eq "") {
+        if (
+            $null -eq $value -or
+            "$value" -eq ""
+        ) {
             continue
         }
 
         $encodedKey =
-            [Uri]::EscapeDataString([string]$key)
+            [Uri]::EscapeDataString(
+                [string]$key
+            )
 
         $encodedValue =
-            [Uri]::EscapeDataString([string]$value)
+            [Uri]::EscapeDataString(
+                [string]$value
+            )
 
         $parts += "$encodedKey=$encodedValue"
     }
@@ -696,9 +771,10 @@ function New-GlpiToken {
         client_id = $script:clientId
         client_secret = $script:clientSecret
         username = $script:credential.UserName
-        password = $script:credential.
-            GetNetworkCredential().
-            Password
+        password =
+            $script:credential.
+                GetNetworkCredential().
+                Password
         scope = $script:scope
     }
 
@@ -803,7 +879,8 @@ function Invoke-GlpiGet {
     }
     catch {
         $statusCode = Get-HttpStatusCode $_
-        $responseBody = Read-ErrorResponseBody $_
+        $responseBody =
+            Read-ErrorResponseBody $_
 
         if (
             Test-GlpiAuthError `
@@ -872,7 +949,8 @@ function Convert-ToArray {
             $Value.PSObject.Properties.Name -contains
             $propertyName
         ) {
-            return Convert-ToArray $Value.$propertyName
+            return Convert-ToArray `
+                $Value.$propertyName
         }
     }
 
@@ -969,9 +1047,14 @@ function Get-ItemDate {
     )
 
     foreach ($field in $FieldNames) {
-        $value = Get-PropValue $Item @($field)
+        $value = Get-PropValue `
+            $Item `
+            @($field)
 
-        if ($null -eq $value -or "$value" -eq "") {
+        if (
+            $null -eq $value -or
+            "$value" -eq ""
+        ) {
             continue
         }
 
@@ -999,7 +1082,9 @@ function Format-DateValue {
         return "data sconosciuta"
     }
 
-    return $Date.ToString("yyyy-MM-dd HH:mm")
+    return $Date.ToString(
+        "yyyy-MM-dd HH:mm"
+    )
 }
 
 function Convert-ToPlainText {
@@ -1015,7 +1100,11 @@ function Convert-ToPlainText {
     $text = $text -replace "<br\s*/?>", "`n"
     $text = $text -replace "</p>", "`n"
     $text = $text -replace "<[^>]+>", ""
-    $text = [System.Net.WebUtility]::HtmlDecode($text)
+
+    $text =
+        [System.Net.WebUtility]::HtmlDecode(
+            $text
+        )
 
     return $text.Trim()
 }
@@ -1027,7 +1116,8 @@ function Get-TaskData {
 
     if (
         $Task -and
-        $Task.PSObject.Properties.Name -contains "item" -and
+        $Task.PSObject.Properties.Name -contains
+        "item" -and
         $Task.item
     ) {
         return $Task.item
@@ -1037,21 +1127,26 @@ function Get-TaskData {
 }
 
 # =========================
-# TICKETS AND STATISTICS
+# ITIL ITEM LISTS
 # =========================
 
-function Get-AllOpenTickets {
-    $endpoint =
-        "$script:apiBaseUrl/$ticketEndpoint"
+function Get-AllOpenItems {
+    param (
+        [string]$ResourcePath,
+        [string]$LogLabel
+    )
 
-    $allTickets = @()
+    $endpoint =
+        "$script:apiBaseUrl/$ResourcePath"
+
+    $allItems = @()
     $start = 0
     $pageNumber = 1
 
     while ($true) {
         Write-Log `
             -Level INFO `
-            -Message "Lettura ticket pagina $pageNumber" `
+            -Message "Lettura $LogLabel pagina $pageNumber" `
             -Data @{
                 start = $start
                 limit = $script:pageSize
@@ -1060,21 +1155,25 @@ function Get-AllOpenTickets {
         $response = Invoke-GlpiGet `
             -Uri $endpoint `
             -Query @{
-                filter = $openTicketFilter
+                filter = $openItemFilter
                 start = $start
                 limit = $script:pageSize
                 sort = "date_creation:desc"
             }
 
-        $ticketsPage = @(Convert-ToArray $response)
+        $itemsPage =
+            @(Convert-ToArray $response)
 
-        if ($ticketsPage.Count -eq 0) {
+        if ($itemsPage.Count -eq 0) {
             break
         }
 
-        $allTickets += $ticketsPage
+        $allItems += $itemsPage
 
-        if ($ticketsPage.Count -lt $script:pageSize) {
+        if (
+            $itemsPage.Count -lt
+            $script:pageSize
+        ) {
             break
         }
 
@@ -1084,14 +1183,18 @@ function Get-AllOpenTickets {
 
     Write-Log `
         -Level INFO `
-        -Message "Lettura ticket completata" `
+        -Message "Lettura $LogLabel completata" `
         -Data @{
-            totalTickets = $allTickets.Count
+            total = $allItems.Count
             pagesRead = $pageNumber
         }
 
-    return @($allTickets)
+    return @($allItems)
 }
+
+# =========================
+# TICKET STATISTICS
+# =========================
 
 function Get-TicketStatusId {
     param (
@@ -1100,7 +1203,11 @@ function Get-TicketStatusId {
 
     $status = Get-PropValue `
         $Ticket `
-        @("status", "status_id", "statuses_id")
+        @(
+            "status",
+            "status_id",
+            "statuses_id"
+        )
 
     $statusId = Get-IdValue $status
 
@@ -1108,17 +1215,27 @@ function Get-TicketStatusId {
         return [int]$statusId
     }
 
-    $statusText = Get-TextValue $status
+    $statusText =
+        Get-TextValue $status
 
-    if ($statusText -match "(?i)new|nuovo|nuova") {
+    if (
+        $statusText -match
+        "(?i)new|nuovo|nuova"
+    ) {
         return 1
     }
 
-    if ($statusText -match "(?i)assigned|assegnato") {
+    if (
+        $statusText -match
+        "(?i)assigned|assegnato"
+    ) {
         return 2
     }
 
-    if ($statusText -match "(?i)planned|pianificato") {
+    if (
+        $statusText -match
+        "(?i)planned|pianificato"
+    ) {
         return 3
     }
 
@@ -1129,11 +1246,17 @@ function Get-TicketStatusId {
         return 4
     }
 
-    if ($statusText -match "(?i)solved|risolto") {
+    if (
+        $statusText -match
+        "(?i)solved|risolto"
+    ) {
         return 5
     }
 
-    if ($statusText -match "(?i)closed|chiuso") {
+    if (
+        $statusText -match
+        "(?i)closed|chiuso"
+    ) {
         return 6
     }
 
@@ -1162,7 +1285,8 @@ function Get-TicketTypeId {
         return [int]$typeId
     }
 
-    $typeText = Get-TextValue $type
+    $typeText =
+        Get-TextValue $type
 
     if (
         $typeText -match
@@ -1183,31 +1307,39 @@ function Get-TicketTypeId {
 
 function Test-TeamAssignedToUser {
     param (
-        $Ticket,
+        $Item,
         [int]$UserId
     )
 
-    $team = Get-PropValue $Ticket @("team")
+    $team =
+        Get-PropValue $Item @("team")
 
     if ($null -eq $team) {
         return $false
     }
 
-    foreach ($member in @(Convert-ToArray $team)) {
+    foreach (
+        $member in @(Convert-ToArray $team)
+    ) {
         $role = (
             Get-TextValue (
-                Get-PropValue $member @("role")
+                Get-PropValue `
+                    $member `
+                    @("role")
             )
         ).Trim().ToLowerInvariant()
 
         $memberId = Get-IdValue (
-            Get-PropValue $member @("id")
+            Get-PropValue `
+                $member `
+                @("id")
         )
 
         if (
             $role -eq "assigned" -and
             $null -ne $memberId -and
-            [int]$memberId -eq [int]$UserId
+            [int]$memberId -eq
+            [int]$UserId
         ) {
             return $true
         }
@@ -1224,32 +1356,47 @@ function Get-DashboardStatsFromTickets {
     $totalOpen = $Tickets.Count
 
     $newAccidents = @(
-        $Tickets | Where-Object {
-            (Get-TicketStatusId $_) -eq 1 -and
-            (Get-TicketTypeId $_) -eq 1
-        }
+        $Tickets |
+            Where-Object {
+                (
+                    Get-TicketStatusId $_
+                ) -eq 1 -and
+                (
+                    Get-TicketTypeId $_
+                ) -eq 1
+            }
     ).Count
 
     $newRequests = @(
-        $Tickets | Where-Object {
-            (Get-TicketStatusId $_) -eq 1 -and
-            (Get-TicketTypeId $_) -eq 2
-        }
+        $Tickets |
+            Where-Object {
+                (
+                    Get-TicketStatusId $_
+                ) -eq 1 -and
+                (
+                    Get-TicketTypeId $_
+                ) -eq 2
+            }
     ).Count
 
     $myAssigned = @(
-        $Tickets | Where-Object {
-            Test-TeamAssignedToUser `
-                -Ticket $_ `
-                -UserId $script:targetUserId
-        }
+        $Tickets |
+            Where-Object {
+                Test-TeamAssignedToUser `
+                    -Item $_ `
+                    -UserId $script:targetUserId
+            }
     ).Count
 
     return [PSCustomObject]@{
-        totaleTicketAperti = [int]$totalOpen
-        nuoviIncidenti = [int]$newAccidents
-        nuoveRichieste = [int]$newRequests
-        assegnatiAMe = [int]$myAssigned
+        totaleTicketAperti =
+            [int]$totalOpen
+        nuoviIncidenti =
+            [int]$newAccidents
+        nuoveRichieste =
+            [int]$newRequests
+        assegnatiAMe =
+            [int]$myAssigned
     }
 }
 
@@ -1272,7 +1419,11 @@ function Test-TaskBelongsToUser {
             "user_tech"
         )
     ) {
-        $value = Get-PropValue $taskData @($field)
+        $value =
+            Get-PropValue `
+                $taskData `
+                @($field)
+
         $id = Get-IdValue $value
 
         if (
@@ -1294,7 +1445,9 @@ function Test-TaskIsTodo {
     $taskData = Get-TaskData $Task
 
     $stateId = Get-IdValue (
-        Get-PropValue $taskData @("state")
+        Get-PropValue `
+            $taskData `
+            @("state")
     )
 
     return $stateId -ne 2
@@ -1309,10 +1462,17 @@ function Set-CommonResponseHeaders {
         [System.Net.HttpListenerResponse]$Response
     )
 
-    $Response.Headers["Cache-Control"] = "no-store"
-    $Response.Headers["Pragma"] = "no-cache"
-    $Response.Headers["X-Content-Type-Options"] = "nosniff"
-    $Response.Headers["Referrer-Policy"] = "no-referrer"
+    $Response.Headers["Cache-Control"] =
+        "no-store"
+
+    $Response.Headers["Pragma"] =
+        "no-cache"
+
+    $Response.Headers["X-Content-Type-Options"] =
+        "nosniff"
+
+    $Response.Headers["Referrer-Policy"] =
+        "no-referrer"
 }
 
 function Start-NdjsonResponse {
@@ -1322,6 +1482,7 @@ function Start-NdjsonResponse {
 
     $response = $Context.Response
     $response.StatusCode = 200
+
     $response.ContentType =
         "application/x-ndjson; charset=utf-8"
 
@@ -1338,12 +1499,17 @@ function Write-NdjsonEvent {
         $Object
     )
 
-    $json = $Object |
-        ConvertTo-Json -Depth 50 -Compress
+    $json =
+        $Object |
+        ConvertTo-Json `
+            -Depth 60 `
+            -Compress
 
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes(
-        $json + "`n"
-    )
+    $bytes =
+        [System.Text.Encoding]::UTF8.
+            GetBytes(
+                $json + "`n"
+            )
 
     $Context.Response.OutputStream.Write(
         $bytes,
@@ -1365,51 +1531,60 @@ function Get-DashboardData {
 
     $started = Get-Date
 
-    # One ticket-list request per dashboard refresh.
-    $tickets = @(Get-AllOpenTickets)
+    $tickets = @(
+        Get-AllOpenItems `
+            -ResourcePath $ticketResourcePath `
+            -LogLabel "ticket"
+    )
 
-    $stats = Get-DashboardStatsFromTickets `
-        -Tickets $tickets
+    $problems = @(
+        Get-AllOpenItems `
+            -ResourcePath $problemResourcePath `
+            -LogLabel "problemi"
+    )
+
+    $stats =
+        Get-DashboardStatsFromTickets `
+            -Tickets $tickets
 
     $totals = [PSCustomObject]@{
         chiamate = [int]$tickets.Count
-        problemi = 0
+        problemi = [int]$problems.Count
         cambiamenti = 0
     }
 
-    $total = $tickets.Count
-    $completed = 0
+    $completedByCategory = @{
+        chiamate = 0
+        problemi = 0
+    }
+
+    $totalByCategory = @{
+        chiamate = $tickets.Count
+        problemi = $problems.Count
+    }
 
     if ($null -ne $StreamContext) {
         Write-NdjsonEvent `
             -Context $StreamContext `
-            -Object ([PSCustomObject]@{
-                type = "start"
-                completed = 0
-                total = $total
-                concurrency = $script:taskConcurrency
-                stats = $stats
-                totals = $totals
-            })
+            -Object (
+                [PSCustomObject]@{
+                    type = "start"
+                    stats = $stats
+                    totals = $totals
+                    concurrency =
+                        $script:taskConcurrency
+                }
+            )
     }
 
-    $taskResults = New-Object `
-        "System.Collections.Generic.List[object]"
+    $resultsByCategory = @{
+        chiamate =
+            New-Object `
+                "System.Collections.Generic.List[object]"
 
-    if ($total -eq 0) {
-        $emptyResult = [PSCustomObject]@{
-            stats = $stats
-            totals = $totals
-            chiamate = @()
-            problemi = @()
-            cambiamenti = @()
-            aggiornatoAlle = (Get-Date).ToString(
-                "yyyy-MM-dd HH:mm:ss"
-            )
-            durataMs = 0
-        }
-
-        return $emptyResult
+        problemi =
+            New-Object `
+                "System.Collections.Generic.List[object]"
     }
 
     $token = Get-AccessToken
@@ -1461,17 +1636,20 @@ function Get-DashboardData {
                 -Uri $Endpoint `
                 -Method GET `
                 -Headers @{
-                    Authorization = "Bearer $AccessToken"
-                    accept = "application/json"
-                    "Accept-Language" = "en_GB"
+                    Authorization =
+                        "Bearer $AccessToken"
+                    accept =
+                        "application/json"
+                    "Accept-Language" =
+                        "en_GB"
                 } `
                 -ErrorAction Stop
 
-            $tasks = @(Convert-WorkerArray $response)
-
             [PSCustomObject]@{
                 success = $true
-                tasks = @($tasks)
+                tasks = @(
+                    Convert-WorkerArray $response
+                )
                 errorMessage = $null
                 statusCode = $null
                 responseBody = $null
@@ -1487,18 +1665,23 @@ function Get-DashboardData {
                     $_.Exception.Response.StatusCode
                 ) {
                     $statusCode =
-                        [int]$_.Exception.Response.StatusCode
+                        [int]$_.Exception.Response.
+                            StatusCode
                 }
             }
             catch {}
 
             try {
                 $stream =
-                    $_.Exception.Response.GetResponseStream()
+                    $_.Exception.Response.
+                        GetResponseStream()
 
                 if ($stream) {
-                    $reader = New-Object `
-                        System.IO.StreamReader($stream)
+                    $reader =
+                        New-Object `
+                            System.IO.StreamReader(
+                                $stream
+                            )
 
                     try {
                         $responseBody =
@@ -1514,86 +1697,151 @@ function Get-DashboardData {
             [PSCustomObject]@{
                 success = $false
                 tasks = @()
-                errorMessage = $_.Exception.Message
+                errorMessage =
+                    $_.Exception.Message
                 statusCode = $statusCode
                 responseBody = $responseBody
             }
         }
     }
 
-    $runspacePool = [runspacefactory]::CreateRunspacePool(
-        1,
-        $script:taskConcurrency
-    )
+    $runspacePool =
+        [runspacefactory]::CreateRunspacePool(
+            1,
+            $script:taskConcurrency
+        )
 
     $runspacePool.Open()
 
-    $jobs = New-Object System.Collections.ArrayList
+    $jobs =
+        New-Object `
+            System.Collections.ArrayList
 
-    try {
-        foreach ($ticket in $tickets) {
-            $ticketId = Get-IdValue (
-                Get-PropValue $ticket @("id")
+    function Add-CategoryJobs {
+        param (
+            [array]$Items,
+            [string]$Category,
+            [string]$TaskEndpointTemplate,
+            [string]$FormPath
+        )
+
+        foreach ($item in $Items) {
+            $parentId = Get-IdValue (
+                Get-PropValue `
+                    $item `
+                    @("id")
             )
 
-            if ($null -eq $ticketId) {
-                $completed++
+            if ($null -eq $parentId) {
+                $completedByCategory[$Category]++
 
                 if ($null -ne $StreamContext) {
                     Write-NdjsonEvent `
                         -Context $StreamContext `
-                        -Object ([PSCustomObject]@{
-                            type = "progress"
-                            completed = $completed
-                            total = $total
-                        })
+                        -Object (
+                            [PSCustomObject]@{
+                                type = "progress"
+                                category = $Category
+                                completed =
+                                    $completedByCategory[
+                                        $Category
+                                    ]
+                                total =
+                                    $totalByCategory[
+                                        $Category
+                                    ]
+                            }
+                        )
                 }
 
                 continue
             }
 
-            $ticketTitle = Get-PropValue `
-                $ticket `
-                @("name", "title")
+            $parentTitle =
+                Get-PropValue `
+                    $item `
+                    @("name", "title")
 
-            if (-not $ticketTitle) {
-                $ticketTitle = "(senza titolo)"
+            if (-not $parentTitle) {
+                $parentTitle =
+                    "(senza titolo)"
             }
 
             $relativeEndpoint =
-                $ticketTaskEndpointTemplate -f $ticketId
+                $TaskEndpointTemplate -f
+                $parentId
 
             $endpoint =
-                "$script:apiBaseUrl/$relativeEndpoint"
+                "$script:apiBaseUrl/" +
+                $relativeEndpoint
 
-            $powerShell = [powershell]::Create()
-            $powerShell.RunspacePool = $runspacePool
+            $powerShell =
+                [powershell]::Create()
+
+            $powerShell.RunspacePool =
+                $runspacePool
 
             [void]$powerShell.AddScript(
                 $workerScript.ToString()
             )
 
-            [void]$powerShell.AddArgument($endpoint)
-            [void]$powerShell.AddArgument($token)
+            [void]$powerShell.AddArgument(
+                $endpoint
+            )
 
-            $handle = $powerShell.BeginInvoke()
+            [void]$powerShell.AddArgument(
+                $token
+            )
+
+            $handle =
+                $powerShell.BeginInvoke()
 
             [void]$jobs.Add(
                 [PSCustomObject]@{
-                    PowerShell = $powerShell
-                    Handle = $handle
-                    TicketId = [int]$ticketId
-                    TicketTitle = [string]$ticketTitle
-                    Endpoint = $endpoint
+                    PowerShell =
+                        $powerShell
+                    Handle =
+                        $handle
+                    Category =
+                        $Category
+                    ParentId =
+                        [int]$parentId
+                    ParentTitle =
+                        [string]$parentTitle
+                    ParentUrl = (
+                        "$script:glpiWebBaseUrl" +
+                        "$FormPath?id=$parentId"
+                    )
+                    Endpoint =
+                        $endpoint
                 }
             )
         }
+    }
+
+    try {
+        Add-CategoryJobs `
+            -Items $tickets `
+            -Category "chiamate" `
+            -TaskEndpointTemplate `
+                $ticketTaskEndpointTemplate `
+            -FormPath `
+                "/front/ticket.form.php"
+
+        Add-CategoryJobs `
+            -Items $problems `
+            -Category "problemi" `
+            -TaskEndpointTemplate `
+                $problemTaskEndpointTemplate `
+            -FormPath `
+                "/front/problem.form.php"
 
         while ($jobs.Count -gt 0) {
             $finishedJobs = @(
-                $jobs | Where-Object {
-                    $_.Handle.IsCompleted
-                }
+                $jobs |
+                    Where-Object {
+                        $_.Handle.IsCompleted
+                    }
             )
 
             if ($finishedJobs.Count -eq 0) {
@@ -1604,13 +1852,16 @@ function Get-DashboardData {
             foreach ($job in $finishedJobs) {
                 try {
                     $workerOutput =
-                        $job.PowerShell.EndInvoke(
-                            $job.Handle
-                        )
+                        $job.PowerShell.
+                            EndInvoke(
+                                $job.Handle
+                            )
 
                     $workerResult = $null
 
-                    if ($workerOutput.Count -gt 0) {
+                    if (
+                        $workerOutput.Count -gt 0
+                    ) {
                         $workerResult =
                             $workerOutput[
                                 $workerOutput.Count - 1
@@ -1631,7 +1882,8 @@ function Get-DashboardData {
                                 -not (
                                     Test-TaskBelongsToUser `
                                         -Task $task `
-                                        -UserId $script:targetUserId
+                                        -UserId `
+                                            $script:targetUserId
                                 )
                             ) {
                                 continue
@@ -1639,100 +1891,138 @@ function Get-DashboardData {
 
                             if (
                                 -not (
-                                    Test-TaskIsTodo -Task $task
+                                    Test-TaskIsTodo `
+                                        -Task $task
                                 )
                             ) {
                                 continue
                             }
 
-                            $taskData = Get-TaskData $task
+                            $taskData =
+                                Get-TaskData $task
 
-                            $taskId = Get-IdValue (
-                                Get-PropValue `
-                                    $taskData `
-                                    @("id")
-                            )
+                            $taskId =
+                                Get-IdValue (
+                                    Get-PropValue `
+                                        $taskData `
+                                        @("id")
+                                )
 
                             if ($null -eq $taskId) {
                                 continue
                             }
 
-                            $taskDate = Get-ItemDate `
-                                $taskData `
-                                @(
-                                    "date_creation",
-                                    "date",
-                                    "begin",
-                                    "date_mod"
-                                )
-
-                            $content = Convert-ToPlainText (
-                                Get-PropValue `
+                            $taskDate =
+                                Get-ItemDate `
                                     $taskData `
                                     @(
-                                        "content",
-                                        "description",
-                                        "text"
+                                        "date_creation",
+                                        "date",
+                                        "begin",
+                                        "date_mod"
                                     )
-                            )
+
+                            $content =
+                                Convert-ToPlainText (
+                                    Get-PropValue `
+                                        $taskData `
+                                        @(
+                                            "content",
+                                            "description",
+                                            "text"
+                                        )
+                                )
 
                             if (-not $content) {
-                                $content = "(senza contenuto)"
+                                $content =
+                                    "(senza contenuto)"
                             }
 
-                            $taskResults.Add(
+                            $resultsByCategory[
+                                $job.Category
+                            ].Add(
                                 [PSCustomObject]@{
-                                    sortDate = $taskDate
-                                    ticketId = $job.TicketId
-                                    ticketTitle = $job.TicketTitle
-                                    ticketUrl = (
-                                        "$script:glpiWebBaseUrl" +
-                                        "/front/ticket.form.php" +
-                                        "?id=$($job.TicketId)"
-                                    )
-                                    taskId = [int]$taskId
-                                    taskDate = Format-DateValue `
+                                    sortDate =
                                         $taskDate
-                                    content = [string]$content
+                                    parentId =
+                                        $job.ParentId
+                                    parentTitle =
+                                        $job.ParentTitle
+                                    parentUrl =
+                                        $job.ParentUrl
+                                    taskId =
+                                        [int]$taskId
+                                    taskDate =
+                                        Format-DateValue `
+                                            $taskDate
+                                    content =
+                                        [string]$content
                                 }
                             )
                         }
                     }
-                    elseif ($null -ne $workerResult) {
+                    elseif (
+                        $null -ne $workerResult
+                    ) {
                         Write-Log `
                             -Level WARN `
-                            -Message "Errore lettura attività ticket" `
+                            -Message "Errore lettura attività" `
                             -Data @{
-                                ticketId = $job.TicketId
+                                category =
+                                    $job.Category
+                                parentId =
+                                    $job.ParentId
                                 message =
-                                    $workerResult.errorMessage
+                                    $workerResult.
+                                        errorMessage
                                 statusCode =
-                                    $workerResult.statusCode
+                                    $workerResult.
+                                        statusCode
                                 responseBody =
-                                    $workerResult.responseBody
+                                    $workerResult.
+                                        responseBody
                             }
                     }
                 }
                 catch {
                     Write-Log `
                         -Level WARN `
-                        -Message "Errore runspace attività ticket" `
+                        -Message "Errore runspace attività" `
                         -Data @{
-                            ticketId = $job.TicketId
-                            message = $_.Exception.Message
+                            category =
+                                $job.Category
+                            parentId =
+                                $job.ParentId
+                            message =
+                                $_.Exception.Message
                         }
                 }
                 finally {
-                    $completed++
+                    $completedByCategory[
+                        $job.Category
+                    ]++
 
-                    if ($null -ne $StreamContext) {
+                    if (
+                        $null -ne $StreamContext
+                    ) {
                         Write-NdjsonEvent `
                             -Context $StreamContext `
-                            -Object ([PSCustomObject]@{
-                                type = "progress"
-                                completed = $completed
-                                total = $total
-                            })
+                            -Object (
+                                [PSCustomObject]@{
+                                    type =
+                                        "progress"
+                                    category =
+                                        $job.Category
+                                    completed =
+                                        $completedByCategory[
+                                            $job.Category
+                                        ]
+                                    total =
+                                        $totalByCategory[
+                                            $job.Category
+                                        ]
+                                }
+                            )
                     }
 
                     try {
@@ -1769,53 +2059,86 @@ function Get-DashboardData {
         catch {}
     }
 
-    $sortedResults = @(
-        $taskResults |
-            Sort-Object `
-                @{
-                    Expression = { $_.sortDate }
-                    Descending = $true
-                },
-                @{
-                    Expression = { $_.ticketId }
-                    Descending = $true
-                }
+    function Get-PublicSortedTasks {
+        param (
+            [System.Collections.Generic.List[object]]$Items
+        )
+
+        $sorted = @(
+            $Items |
+                Sort-Object `
+                    @{
+                        Expression = {
+                            $_.sortDate
+                        }
+                        Descending = $true
+                    },
+                    @{
+                        Expression = {
+                            $_.parentId
+                        }
+                        Descending = $true
+                    }
+        )
+
+        return @(
+            $sorted |
+                Select-Object `
+                    parentId,
+                    parentTitle,
+                    parentUrl,
+                    taskId,
+                    taskDate,
+                    content
+        )
+    }
+
+    $ticketTasks = @(
+        Get-PublicSortedTasks `
+            -Items `
+                $resultsByCategory.chiamate
     )
 
-    $publicResults = @(
-        $sortedResults |
-            Select-Object `
-                ticketId,
-                ticketTitle,
-                ticketUrl,
-                taskId,
-                taskDate,
-                content
+    $problemTasks = @(
+        Get-PublicSortedTasks `
+            -Items `
+                $resultsByCategory.problemi
     )
 
     $elapsedMs = [int](
-        ((Get-Date) - $started).TotalMilliseconds
+        (
+            (Get-Date) - $started
+        ).TotalMilliseconds
     )
 
     Write-Log `
         -Level INFO `
         -Message "Dashboard aggiornata" `
         -Data @{
-            tickets = $total
-            tasks = $publicResults.Count
-            concurrency = $script:taskConcurrency
-            elapsedMs = $elapsedMs
+            openTickets =
+                $tickets.Count
+            openProblems =
+                $problems.Count
+            ticketTasks =
+                $ticketTasks.Count
+            problemTasks =
+                $problemTasks.Count
+            concurrency =
+                $script:taskConcurrency
+            elapsedMs =
+                $elapsedMs
         }
 
     return [PSCustomObject]@{
         stats = $stats
         totals = $totals
-        chiamate = @($publicResults)
-        problemi = @()
+        chiamate = @($ticketTasks)
+        problemi = @($problemTasks)
         cambiamenti = @()
-        aggiornatoAlle = (Get-Date).ToString(
-            "yyyy-MM-dd HH:mm:ss"
-        )
+        aggiornatoAlle =
+            (Get-Date).ToString(
+                "yyyy-MM-dd HH:mm:ss"
+            )
         durataMs = $elapsedMs
     }
 }
@@ -1844,21 +2167,25 @@ function Send-Response {
         [string]$ContentType
     )
 
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes(
-        $Body
-    )
+    $bytes =
+        [System.Text.Encoding]::UTF8.
+            GetBytes($Body)
 
     $response = $Context.Response
     $response.StatusCode = $StatusCode
+
     $response.ContentType =
         "$ContentType; charset=utf-8"
 
-    $response.ContentLength64 = $bytes.Length
+    $response.ContentLength64 =
+        $bytes.Length
 
     Set-CommonResponseHeaders `
         -Response $response
 
-    $response.Headers["Content-Security-Policy"] =
+    $response.Headers[
+        "Content-Security-Policy"
+    ] =
         "default-src 'self'; " +
         "script-src 'self' 'unsafe-inline'; " +
         "style-src 'self' 'unsafe-inline'; " +
@@ -1886,8 +2213,11 @@ function Send-Json {
         [int]$StatusCode = 200
     )
 
-    $json = $Object |
-        ConvertTo-Json -Depth 50 -Compress
+    $json =
+        $Object |
+        ConvertTo-Json `
+            -Depth 60 `
+            -Compress
 
     Send-Response `
         -Context $Context `
@@ -1907,7 +2237,11 @@ function Handle-Request {
     )
 
     $request = $Context.Request
-    $path = $request.Url.AbsolutePath.ToLowerInvariant()
+
+    $path =
+        $request.Url.
+            AbsolutePath.
+            ToLowerInvariant()
 
     if ($request.HttpMethod -ne "GET") {
         Send-Response `
@@ -1945,18 +2279,22 @@ function Handle-Request {
         }
 
         "/api/dashboard/stream" {
-            Start-NdjsonResponse -Context $Context
+            Start-NdjsonResponse `
+                -Context $Context
 
             try {
-                $data = Get-DashboardData `
-                    -StreamContext $Context
+                $data =
+                    Get-DashboardData `
+                        -StreamContext $Context
 
                 Write-NdjsonEvent `
                     -Context $Context `
-                    -Object ([PSCustomObject]@{
-                        type = "result"
-                        data = $data
-                    })
+                    -Object (
+                        [PSCustomObject]@{
+                            type = "result"
+                            data = $data
+                        }
+                    )
             }
             catch {
                 Write-Log `
@@ -1964,22 +2302,28 @@ function Handle-Request {
                     -Message "Errore stream dashboard" `
                     -Data @{
                         requestId = $RequestId
-                        message = $_.Exception.Message
+                        message =
+                            $_.Exception.Message
                     }
 
                 try {
                     Write-NdjsonEvent `
                         -Context $Context `
-                        -Object ([PSCustomObject]@{
-                            type = "error"
-                            message = $_.Exception.Message
-                        })
+                        -Object (
+                            [PSCustomObject]@{
+                                type = "error"
+                                message =
+                                    $_.Exception.Message
+                            }
+                        )
                 }
                 catch {}
             }
             finally {
                 try {
-                    $Context.Response.OutputStream.Close()
+                    $Context.Response.
+                        OutputStream.
+                        Close()
                 }
                 catch {}
             }
@@ -1988,20 +2332,27 @@ function Handle-Request {
         "/api/health" {
             Send-Json `
                 -Context $Context `
-                -Object ([PSCustomObject]@{
-                    ok = $true
-                    authenticated =
-                        -not [string]::IsNullOrWhiteSpace(
-                            $script:accessToken
+                -Object (
+                    [PSCustomObject]@{
+                        ok = $true
+                        authenticated =
+                            -not [string]::IsNullOrWhiteSpace(
+                                $script:accessToken
+                            )
+                        taskConcurrency =
+                            $script:taskConcurrency
+                        autoRefreshSeconds =
+                            $script:autoRefreshSeconds
+                        implementedActivities = @(
+                            "chiamate",
+                            "problemi"
                         )
-                    taskConcurrency =
-                        $script:taskConcurrency
-                    autoRefreshSeconds =
-                        $script:autoRefreshSeconds
-                    time = (Get-Date).ToString(
-                        "yyyy-MM-dd HH:mm:ss"
-                    )
-                })
+                        time =
+                            (Get-Date).ToString(
+                                "yyyy-MM-dd HH:mm:ss"
+                            )
+                    }
+                )
         }
 
         "/favicon.ico" {
@@ -2059,9 +2410,12 @@ function Start-LocalServer {
     }
 
     $script:httpListener =
-        New-Object System.Net.HttpListener
+        New-Object `
+            System.Net.HttpListener
 
-    $script:httpListener.Prefixes.Add($Prefix)
+    $script:httpListener.
+        Prefixes.
+        Add($Prefix)
 
     try {
         $script:httpListener.Start()
@@ -2086,7 +2440,8 @@ function Start-LocalServer {
         -Message "Web service locale avviato" `
         -Data @{
             dashboard = $Prefix
-            taskConcurrency = $script:taskConcurrency
+            taskConcurrency =
+                $script:taskConcurrency
             autoRefreshSeconds =
                 $script:autoRefreshSeconds
             pid = $PID
@@ -2118,7 +2473,8 @@ function Start-LocalServer {
 
         try {
             $context =
-                $script:httpListener.GetContext()
+                $script:httpListener.
+                    GetContext()
         }
         catch [System.Net.HttpListenerException] {
             if ($script:stopRequested) {
@@ -2129,7 +2485,8 @@ function Start-LocalServer {
                 -Level WARN `
                 -Message "Listener HTTP interrotto" `
                 -Data @{
-                    error = $_.Exception.Message
+                    error =
+                        $_.Exception.Message
                 }
 
             break
@@ -2149,10 +2506,13 @@ function Start-LocalServer {
             -Message "Richiesta ricevuta" `
             -Data @{
                 requestId = $requestId
-                method = $request.HttpMethod
-                path = $request.Url.AbsolutePath
+                method =
+                    $request.HttpMethod
+                path =
+                    $request.Url.AbsolutePath
                 remote =
-                    $request.RemoteEndPoint.ToString()
+                    $request.RemoteEndPoint.
+                        ToString()
             }
 
         try {
@@ -2161,8 +2521,9 @@ function Start-LocalServer {
                 -RequestId $requestId
 
             $elapsedMs = [int](
-                ((Get-Date) - $started).
-                    TotalMilliseconds
+                (
+                    (Get-Date) - $started
+                ).TotalMilliseconds
             )
 
             Write-Log `
@@ -2170,22 +2531,28 @@ function Start-LocalServer {
                 -Message "Richiesta completata" `
                 -Data @{
                     requestId = $requestId
-                    path = $request.Url.AbsolutePath
+                    path =
+                        $request.Url.AbsolutePath
                     elapsedMs = $elapsedMs
                 }
         }
         catch {
-            $details = Get-ExceptionDetails $_
+            $details =
+                Get-ExceptionDetails $_
 
             Write-Log `
                 -Level ERROR `
                 -Message "Richiesta fallita" `
                 -Data @{
                     requestId = $requestId
-                    path = $request.Url.AbsolutePath
-                    message = $details.message
-                    type = $details.type
-                    statusCode = $details.statusCode
+                    path =
+                        $request.Url.AbsolutePath
+                    message =
+                        $details.message
+                    type =
+                        $details.type
+                    statusCode =
+                        $details.statusCode
                     responseBody =
                         $details.responseBody
                     stack =
@@ -2193,10 +2560,11 @@ function Start-LocalServer {
                 }
 
             try {
-                $errorObject = New-ErrorResponseObject `
-                    -ErrorRecord $_ `
-                    -PublicMessage "Errore interno durante la richiesta" `
-                    -RequestId $requestId
+                $errorObject =
+                    New-ErrorResponseObject `
+                        -ErrorRecord $_ `
+                        -PublicMessage "Errore interno durante la richiesta" `
+                        -RequestId $requestId
 
                 Send-Json `
                     -Context $context `
@@ -2214,10 +2582,11 @@ function Start-LocalServer {
 
 $envVars = Load-Env $envPath
 
-$script:logLevel = Get-EnvValue `
-    -EnvVars $envVars `
-    -Key "LOG_LEVEL" `
-    -Default "INFO"
+$script:logLevel =
+    Get-EnvValue `
+        -EnvVars $envVars `
+        -Key "LOG_LEVEL" `
+        -Default "INFO"
 
 $script:apiBaseUrl = (
     Get-RequiredString `
@@ -2225,9 +2594,10 @@ $script:apiBaseUrl = (
         -Key "GLPI_API_BASE_URL"
 ).TrimEnd("/")
 
-$script:authUrl = Get-RequiredString `
-    -EnvVars $envVars `
-    -Key "GLPI_AUTH_URL"
+$script:authUrl =
+    Get-RequiredString `
+        -EnvVars $envVars `
+        -Key "GLPI_AUTH_URL"
 
 $script:glpiWebBaseUrl = (
     Get-RequiredString `
@@ -2235,66 +2605,84 @@ $script:glpiWebBaseUrl = (
         -Key "GLPI_WEB_BASE_URL"
 ).TrimEnd("/")
 
-$script:clientId = Get-RequiredString `
-    -EnvVars $envVars `
-    -Key "CLIENT_ID"
+$script:clientId =
+    Get-RequiredString `
+        -EnvVars $envVars `
+        -Key "CLIENT_ID"
 
-$script:clientSecret = Get-RequiredString `
-    -EnvVars $envVars `
-    -Key "CLIENT_SECRET"
+$script:clientSecret =
+    Get-RequiredString `
+        -EnvVars $envVars `
+        -Key "CLIENT_SECRET"
 
-$script:username = Get-RequiredString `
-    -EnvVars $envVars `
-    -Key "USERNAME"
+$script:username =
+    Get-RequiredString `
+        -EnvVars $envVars `
+        -Key "USERNAME"
 
-$script:targetUserId = Get-RequiredInt `
-    -EnvVars $envVars `
-    -Key "USER_ID"
+$script:targetUserId =
+    Get-RequiredInt `
+        -EnvVars $envVars `
+        -Key "USER_ID"
 
-$script:scope = Get-EnvValue `
-    -EnvVars $envVars `
-    -Key "SCOPE" `
-    -Default "email user api inventory status graphql"
+$script:scope =
+    Get-EnvValue `
+        -EnvVars $envVars `
+        -Key "SCOPE" `
+        -Default "email user api inventory status graphql"
 
-$script:pageSize = Get-OptionalInt `
-    -EnvVars $envVars `
-    -Key "PAGE_SIZE" `
-    -Default 100 `
-    -Minimum 1 `
-    -Maximum 1000
+$script:pageSize =
+    Get-OptionalInt `
+        -EnvVars $envVars `
+        -Key "PAGE_SIZE" `
+        -Default 100 `
+        -Minimum 1 `
+        -Maximum 1000
 
-$script:taskConcurrency = Get-OptionalInt `
-    -EnvVars $envVars `
-    -Key "TASK_CONCURRENCY" `
-    -Default 6 `
-    -Minimum 1 `
-    -Maximum 20
+$script:taskConcurrency =
+    Get-OptionalInt `
+        -EnvVars $envVars `
+        -Key "TASK_CONCURRENCY" `
+        -Default 6 `
+        -Minimum 1 `
+        -Maximum 20
 
-$script:autoRefreshSeconds = Get-OptionalInt `
-    -EnvVars $envVars `
-    -Key "AUTO_REFRESH_SECONDS" `
-    -Default 60 `
-    -Minimum 10 `
-    -Maximum 3600
+$script:autoRefreshSeconds =
+    Get-OptionalInt `
+        -EnvVars $envVars `
+        -Key "AUTO_REFRESH_SECONDS" `
+        -Default 60 `
+        -Minimum 10 `
+        -Maximum 3600
 
-$script:hostPrefix = Resolve-LocalHostPrefix `
-    -EnvVars $envVars
+$script:hostPrefix =
+    Resolve-LocalHostPrefix `
+        -EnvVars $envVars
 
 Write-Log `
     -Level INFO `
     -Message "Configurazione caricata" `
     -Data @{
-        apiBaseUrl = $script:apiBaseUrl
-        authUrl = $script:authUrl
-        webBaseUrl = $script:glpiWebBaseUrl
-        username = $script:username
-        userId = $script:targetUserId
-        pageSize = $script:pageSize
-        taskConcurrency = $script:taskConcurrency
+        apiBaseUrl =
+            $script:apiBaseUrl
+        authUrl =
+            $script:authUrl
+        webBaseUrl =
+            $script:glpiWebBaseUrl
+        username =
+            $script:username
+        userId =
+            $script:targetUserId
+        pageSize =
+            $script:pageSize
+        taskConcurrency =
+            $script:taskConcurrency
         autoRefreshSeconds =
             $script:autoRefreshSeconds
-        host = $script:hostPrefix
-        logLevel = $script:logLevel
+        host =
+            $script:hostPrefix
+        logLevel =
+            $script:logLevel
     }
 
 Initialize-DashboardSingleInstance
@@ -2306,15 +2694,18 @@ Write-Host `
     "Utente GLPI: $script:username" `
     -ForegroundColor Cyan
 
-$securePassword = Read-Host `
-    "Inserisci la password GLPI" `
-    -AsSecureString
+$securePassword =
+    Read-Host `
+        "Inserisci la password GLPI" `
+        -AsSecureString
 
 $script:credential =
-    New-Object System.Management.Automation.PSCredential(
-        $script:username,
-        $securePassword
-    )
+    New-Object `
+        System.Management.Automation.PSCredential `
+        (
+            $script:username,
+            $securePassword
+        )
 
 try {
     [void](Get-AccessToken)
