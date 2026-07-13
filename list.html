@@ -1105,8 +1105,8 @@
       ? configuredRefreshSeconds
       : 60;
     const REFRESH_MS = REFRESH_SECONDS * 1000;
-    const CACHE_KEY = "personal-glpi-dashboard-cache-v4";
-    const CACHE_VERSION = 4;
+    const CACHE_KEY = "personal-glpi-dashboard-cache-v5";
+    const CACHE_VERSION = 5;
 
     const VIEW_CONFIG = {
       "totali-aperti": { title: "Totali aperti", label: "Ticket aperti" },
@@ -1160,6 +1160,11 @@
         lists: {},
         listUpdatedAt: {},
         categoryUpdatedAt: {},
+        updates: {
+          items: [],
+          count: 0,
+          generatedAt: null
+        },
         aggiornatoAlle: null,
         lastFullRefreshAt: 0
       };

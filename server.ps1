@@ -9,6 +9,8 @@ $dashboardPath = Join-Path $scriptDir "dashboard.html"
 $listPath = Join-Path $scriptDir "list.html"
 $pidPath = Join-Path $scriptDir "dashboard-server.pid.json"
 $notesDbPath = Join-Path $scriptDir "notes-db.json"
+$updatesDbPath = Join-Path $scriptDir "updates-db.json"
+$updatesSnapshotPath = Join-Path $scriptDir "updates-snapshot.json"
 
 $ticketResourcePath = "Assistance/Ticket"
 $problemResourcePath = "Assistance/Problem"
@@ -17,6 +19,10 @@ $changeResourcePath = "Assistance/Change"
 $ticketTaskEndpointTemplate = "Assistance/Ticket/{0}/Timeline/Task"
 $problemTaskEndpointTemplate = "Assistance/Problem/{0}/Timeline/Task"
 $changeTaskEndpointTemplate = "Assistance/Change/{0}/Timeline/Task"
+
+$ticketFollowupEndpointTemplate = "Assistance/Ticket/{0}/Timeline/Followup"
+$problemFollowupEndpointTemplate = "Assistance/Problem/{0}/Timeline/Followup"
+$changeFollowupEndpointTemplate = "Assistance/Change/{0}/Timeline/Followup"
 
 $openItemFilter = "status.id=out=(5,6);is_deleted==false"
 
@@ -28,7 +34,9 @@ $script:accessToken = $null
 $script:logLevel = "INFO"
 $script:taskConcurrency = 6
 $script:autoRefreshSeconds = 60
+$script:updateRetentionHours = 24
 $script:notesLock = New-Object object
+$script:updatesLock = New-Object object
 
 # =========================
 # LOGGING / ERRORS
@@ -1123,6 +1131,10 @@ function Invoke-TaskCategoryScan {
                             if ($null -eq $taskId) { continue }
 
                             $taskDate = Get-ItemDate $taskData @("date_creation", "date", "begin", "date_mod")
+                            $taskDateMod = Get-ItemDate $taskData @("date_mod", "date", "date_creation")
+                            $taskBegin = Get-ItemDate $taskData @("begin", "date", "date_creation")
+                            $taskStateId = Get-IdValue (Get-PropValue $taskData @("state"))
+                            $taskTechUserId = Get-IdValue (Get-PropValue $taskData @("user_tech"))
                             $content = Convert-ToPlainText (Get-PropValue $taskData @("content", "description", "text"))
                             if (-not $content) { $content = "(senza contenuto)" }
 
@@ -1136,6 +1148,10 @@ function Invoke-TaskCategoryScan {
                                 parentStatusText = $job.ParentStatusText
                                 taskId = [int]$taskId
                                 taskDate = Format-DateValue $taskDate
+                                taskDateMod = if ($taskDateMod -eq [datetime]::MinValue) { "" } else { $taskDateMod.ToString("o") }
+                                taskBegin = if ($taskBegin -eq [datetime]::MinValue) { "" } else { $taskBegin.ToString("o") }
+                                taskStateId = $taskStateId
+                                taskTechUserId = $taskTechUserId
                                 content = [string]$content
                             })
                         }
@@ -1190,9 +1206,438 @@ function Invoke-TaskCategoryScan {
             Sort-Object `
                 @{ Expression = { $_.sortDate }; Descending = $true }, `
                 @{ Expression = { $_.parentId }; Descending = $true } |
-            Select-Object parentId, parentTitle, parentUrl, parentKind, parentStatusId, parentStatusText, taskId, taskDate, content
+            Select-Object parentId, parentTitle, parentUrl, parentKind, parentStatusId, parentStatusText, taskId, taskDate, taskDateMod, taskBegin, taskStateId, taskTechUserId, content
     )
 }
+
+function Invoke-DashboardDetailScan {
+    param (
+        [array]$Tickets,
+        [array]$Problems,
+        [array]$Changes,
+        [array]$FollowupRequests,
+        [System.Net.HttpListenerContext]$StreamContext = $null
+    )
+
+    # A single runspace pool is shared by ticket, problem, change and follow-up
+    # requests. This keeps the configured concurrency as a real global limit
+    # and prevents the three activity categories from being scanned serially.
+    $taskResultsByCategory = @{
+        chiamate = New-Object "System.Collections.Generic.List[object]"
+        problemi = New-Object "System.Collections.Generic.List[object]"
+        cambiamenti = New-Object "System.Collections.Generic.List[object]"
+    }
+
+    $taskTotals = @{
+        chiamate = @($Tickets).Count
+        problemi = @($Problems).Count
+        cambiamenti = @($Changes).Count
+    }
+
+    $taskCompleted = @{
+        chiamate = 0
+        problemi = 0
+        cambiamenti = 0
+    }
+
+    $commentResults = @{}
+    $token = Get-AccessToken
+
+    $workerScript = {
+        param (
+            [string]$Endpoint,
+            [string]$AccessToken,
+            [string]$RequestType
+        )
+
+        $ErrorActionPreference = "Stop"
+
+        function Convert-WorkerArray {
+            param ($Value)
+
+            if ($null -eq $Value) { return @() }
+            if ($Value -is [System.Array]) { return @($Value) }
+
+            foreach ($propertyName in @("data", "items", "results", "member", "hydra:member")) {
+                $property = $null
+                try { $property = $Value.PSObject.Properties[$propertyName] } catch {}
+                if ($null -ne $property) { return Convert-WorkerArray $property.Value }
+            }
+
+            return @($Value)
+        }
+
+        function Get-WorkerId {
+            param ($Value)
+
+            if ($null -eq $Value) { return $null }
+            if ($Value -is [int] -or $Value -is [long]) { return [long]$Value }
+
+            if ($Value -is [string]) {
+                $parsed = 0L
+                if ([long]::TryParse($Value, [ref]$parsed)) { return $parsed }
+                return $null
+            }
+
+            $property = $null
+            try { $property = $Value.PSObject.Properties["id"] } catch {}
+            if ($null -ne $property) { return Get-WorkerId $property.Value }
+            return $null
+        }
+
+        try {
+            $response = Invoke-RestMethod `
+                -Uri $Endpoint `
+                -Method GET `
+                -Headers @{
+                    Authorization = "Bearer $AccessToken"
+                    accept = "application/json"
+                    "Accept-Language" = "en_GB"
+                } `
+                -ErrorAction Stop
+
+            if ($RequestType -eq "followup") {
+                $ids = New-Object "System.Collections.Generic.HashSet[long]"
+
+                foreach ($entry in @(Convert-WorkerArray $response)) {
+                    $data = $entry
+                    $itemProperty = $null
+                    try { $itemProperty = $entry.PSObject.Properties["item"] } catch {}
+                    if ($null -ne $itemProperty -and $null -ne $itemProperty.Value) {
+                        $data = $itemProperty.Value
+                    }
+
+                    $idProperty = $null
+                    try { $idProperty = $data.PSObject.Properties["id"] } catch {}
+                    if ($null -ne $idProperty) {
+                        $id = Get-WorkerId $idProperty.Value
+                        if ($null -ne $id) { [void]$ids.Add([long]$id) }
+                    }
+                }
+
+                return [PSCustomObject]@{
+                    success = $true
+                    requestType = "followup"
+                    ids = @($ids | Sort-Object)
+                    tasks = @()
+                    errorMessage = $null
+                    statusCode = $null
+                    responseBody = $null
+                }
+            }
+
+            return [PSCustomObject]@{
+                success = $true
+                requestType = "task"
+                ids = @()
+                tasks = @(Convert-WorkerArray $response)
+                errorMessage = $null
+                statusCode = $null
+                responseBody = $null
+            }
+        }
+        catch {
+            $statusCode = $null
+            $responseBody = ""
+
+            try {
+                if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+                    $statusCode = [int]$_.Exception.Response.StatusCode
+                }
+            }
+            catch {}
+
+            try {
+                $stream = $_.Exception.Response.GetResponseStream()
+                if ($stream) {
+                    $reader = [System.IO.StreamReader]::new($stream)
+                    try { $responseBody = $reader.ReadToEnd() } finally { $reader.Dispose() }
+                }
+            }
+            catch {}
+
+            return [PSCustomObject]@{
+                success = $false
+                requestType = $RequestType
+                ids = @()
+                tasks = @()
+                errorMessage = $_.Exception.Message
+                statusCode = $statusCode
+                responseBody = $responseBody
+            }
+        }
+    }
+
+    $runspacePool = [runspacefactory]::CreateRunspacePool(1, $script:taskConcurrency)
+    $runspacePool.Open()
+    $jobs = New-Object System.Collections.ArrayList
+    $followupByItemKey = @{}
+
+    foreach ($request in @($FollowupRequests)) {
+        $requestItemKey = [string](Get-PropValue -Object $request -Names @("itemKey"))
+        if (-not [string]::IsNullOrWhiteSpace($requestItemKey)) {
+            $followupByItemKey[$requestItemKey] = $request
+        }
+    }
+
+    function Add-FollowupJob {
+        param ($Request)
+
+        $endpoint = [string](Get-PropValue -Object $Request -Names @("endpoint"))
+        $itemKey = [string](Get-PropValue -Object $Request -Names @("itemKey"))
+        if ([string]::IsNullOrWhiteSpace($endpoint) -or [string]::IsNullOrWhiteSpace($itemKey)) { return }
+
+        $powerShell = [powershell]::Create()
+        $powerShell.RunspacePool = $runspacePool
+        [void]$powerShell.AddScript($workerScript.ToString())
+        [void]$powerShell.AddArgument($endpoint)
+        [void]$powerShell.AddArgument($token)
+        [void]$powerShell.AddArgument("followup")
+
+        [void]$jobs.Add([PSCustomObject]@{
+            PowerShell = $powerShell
+            Handle = $powerShell.BeginInvoke()
+            RequestType = "followup"
+            Category = $null
+            ParentId = $null
+            ParentTitle = $null
+            ParentUrl = $null
+            ParentKind = $null
+            ParentStatusId = $null
+            ParentStatusText = $null
+            ItemKey = $itemKey
+            Endpoint = $endpoint
+        })
+    }
+
+    function Add-TaskJobs {
+        param (
+            [array]$Items,
+            [string]$Category,
+            [string]$Kind,
+            [string]$TaskEndpointTemplate,
+            [string]$FormPath
+        )
+
+        foreach ($item in @($Items)) {
+            $parentId = Get-IdValue (Get-PropValue -Object $item -Names @("id"))
+
+            if ($null -eq $parentId) {
+                $taskCompleted[$Category]++
+
+                if ($null -ne $StreamContext) {
+                    Write-NdjsonEvent -Context $StreamContext -Object ([PSCustomObject]@{
+                        type = "progress"
+                        category = $Category
+                        completed = $taskCompleted[$Category]
+                        total = $taskTotals[$Category]
+                    })
+                }
+
+                continue
+            }
+
+            $parentTitle = Get-PropValue -Object $item -Names @("name", "title")
+            if (-not $parentTitle) { $parentTitle = "(senza titolo)" }
+
+            $endpoint = "{0}/{1}" -f $script:apiBaseUrl, ($TaskEndpointTemplate -f [int]$parentId)
+            $parentUrl = "{0}{1}?id={2}" -f $script:glpiWebBaseUrl.TrimEnd("/"), $FormPath, [int]$parentId
+
+            $powerShell = [powershell]::Create()
+            $powerShell.RunspacePool = $runspacePool
+            [void]$powerShell.AddScript($workerScript.ToString())
+            [void]$powerShell.AddArgument($endpoint)
+            [void]$powerShell.AddArgument($token)
+            [void]$powerShell.AddArgument("task")
+
+            [void]$jobs.Add([PSCustomObject]@{
+                PowerShell = $powerShell
+                Handle = $powerShell.BeginInvoke()
+                RequestType = "task"
+                Category = $Category
+                ParentId = [int]$parentId
+                ParentTitle = [string]$parentTitle
+                ParentUrl = [string]$parentUrl
+                ParentKind = [string]$Kind
+                ParentStatusId = Get-ItemStatusId -Item $item
+                ParentStatusText = [string](Get-ItemStatusText -Item $item -Kind $Kind)
+                ItemKey = $null
+                Endpoint = $endpoint
+            })
+
+            # Queue the matching follow-up immediately after its task request,
+            # so task and comment calls are interleaved in the shared pool.
+            $itemKey = Get-ItemKey -Kind $Kind -ItemId ([int]$parentId)
+            if ($followupByItemKey.ContainsKey($itemKey)) {
+                Add-FollowupJob -Request $followupByItemKey[$itemKey]
+                [void]$followupByItemKey.Remove($itemKey)
+            }
+        }
+    }
+
+    try {
+        Add-TaskJobs `
+            -Items $Tickets `
+            -Category "chiamate" `
+            -Kind "ticket" `
+            -TaskEndpointTemplate $ticketTaskEndpointTemplate `
+            -FormPath "/front/ticket.form.php"
+
+        Add-TaskJobs `
+            -Items $Problems `
+            -Category "problemi" `
+            -Kind "problem" `
+            -TaskEndpointTemplate $problemTaskEndpointTemplate `
+            -FormPath "/front/problem.form.php"
+
+        Add-TaskJobs `
+            -Items $Changes `
+            -Category "cambiamenti" `
+            -Kind "change" `
+            -TaskEndpointTemplate $changeTaskEndpointTemplate `
+            -FormPath "/front/change.form.php"
+
+        # Any unmatched request is still queued. Normally this collection is
+        # empty because every follow-up belongs to one of the open items above.
+        foreach ($remainingRequest in @($followupByItemKey.Values)) {
+            Add-FollowupJob -Request $remainingRequest
+        }
+
+        while ($jobs.Count -gt 0) {
+            $finishedJobs = @($jobs | Where-Object { $_.Handle.IsCompleted })
+
+            if ($finishedJobs.Count -eq 0) {
+                Start-Sleep -Milliseconds 25
+                continue
+            }
+
+            foreach ($job in $finishedJobs) {
+                try {
+                    $output = $job.PowerShell.EndInvoke($job.Handle)
+                    $workerResult = if ($output.Count -gt 0) { $output[$output.Count - 1] } else { $null }
+
+                    if ($job.RequestType -eq "followup") {
+                        if ($null -ne $workerResult -and $workerResult.success) {
+                            $commentResults[$job.ItemKey] = @($workerResult.ids)
+                        }
+                        else {
+                            Write-Log -Level WARN -Message "Impossibile leggere i commenti timeline" -Data @{
+                                itemKey = $job.ItemKey
+                                message = if ($null -ne $workerResult) { $workerResult.errorMessage } else { "Risposta vuota" }
+                                statusCode = if ($null -ne $workerResult) { $workerResult.statusCode } else { $null }
+                            }
+                        }
+
+                        continue
+                    }
+
+                    if ($null -ne $workerResult -and $workerResult.success) {
+                        foreach ($task in @(Convert-ToArray $workerResult.tasks)) {
+                            if (-not (Test-TaskBelongsToUser -Task $task -UserId $script:targetUserId)) { continue }
+                            if (-not (Test-TaskIsTodo -Task $task)) { continue }
+
+                            $taskData = Get-TaskData -Task $task
+                            $taskId = Get-IdValue (Get-PropValue -Object $taskData -Names @("id"))
+                            if ($null -eq $taskId) { continue }
+
+                            $taskDate = Get-ItemDate -Item $taskData -FieldNames @("date_creation", "date", "begin", "date_mod")
+                            $taskDateMod = Get-ItemDate -Item $taskData -FieldNames @("date_mod", "date", "date_creation")
+                            $taskBegin = Get-ItemDate -Item $taskData -FieldNames @("begin", "date", "date_creation")
+                            $taskStateId = Get-IdValue (Get-PropValue -Object $taskData -Names @("state"))
+                            $taskTechUserId = Get-IdValue (Get-PropValue -Object $taskData -Names @("user_tech"))
+                            $content = Convert-ToPlainText (Get-PropValue -Object $taskData -Names @("content", "description", "text"))
+                            if (-not $content) { $content = "(senza contenuto)" }
+
+                            $taskResultsByCategory[$job.Category].Add([PSCustomObject]@{
+                                sortDate = $taskDate
+                                parentId = $job.ParentId
+                                parentTitle = $job.ParentTitle
+                                parentUrl = $job.ParentUrl
+                                parentKind = $job.ParentKind
+                                parentStatusId = $job.ParentStatusId
+                                parentStatusText = $job.ParentStatusText
+                                taskId = [int]$taskId
+                                taskDate = Format-DateValue -Date $taskDate
+                                taskDateMod = if ($taskDateMod -eq [datetime]::MinValue) { "" } else { $taskDateMod.ToString("o") }
+                                taskBegin = if ($taskBegin -eq [datetime]::MinValue) { "" } else { $taskBegin.ToString("o") }
+                                taskStateId = $taskStateId
+                                taskTechUserId = $taskTechUserId
+                                content = [string]$content
+                            })
+                        }
+                    }
+                    else {
+                        Write-Log -Level WARN -Message "Errore lettura attività" -Data @{
+                            category = $job.Category
+                            parentId = $job.ParentId
+                            message = if ($null -ne $workerResult) { $workerResult.errorMessage } else { "Risposta vuota" }
+                            statusCode = if ($null -ne $workerResult) { $workerResult.statusCode } else { $null }
+                            responseBody = if ($null -ne $workerResult) { $workerResult.responseBody } else { "" }
+                        }
+                    }
+                }
+                catch {
+                    Write-Log -Level WARN -Message "Errore richiesta dettaglio dashboard" -Data @{
+                        requestType = $job.RequestType
+                        category = $job.Category
+                        parentId = $job.ParentId
+                        itemKey = $job.ItemKey
+                        message = $_.Exception.Message
+                    }
+                }
+                finally {
+                    if ($job.RequestType -eq "task") {
+                        $taskCompleted[$job.Category]++
+
+                        if ($null -ne $StreamContext) {
+                            Write-NdjsonEvent -Context $StreamContext -Object ([PSCustomObject]@{
+                                type = "progress"
+                                category = $job.Category
+                                completed = $taskCompleted[$job.Category]
+                                total = $taskTotals[$job.Category]
+                            })
+                        }
+                    }
+
+                    try { $job.PowerShell.Dispose() } catch {}
+                    [void]$jobs.Remove($job)
+                }
+            }
+        }
+    }
+    finally {
+        foreach ($job in @($jobs)) {
+            try { $job.PowerShell.Stop() } catch {}
+            try { $job.PowerShell.Dispose() } catch {}
+        }
+
+        try { $runspacePool.Close() } catch {}
+        try { $runspacePool.Dispose() } catch {}
+    }
+
+    function Get-SortedPublicTasks {
+        param ([System.Collections.Generic.List[object]]$Items)
+
+        return @(
+            $Items |
+                Sort-Object `
+                    @{ Expression = { $_.sortDate }; Descending = $true }, `
+                    @{ Expression = { $_.parentId }; Descending = $true } |
+                Select-Object parentId, parentTitle, parentUrl, parentKind, parentStatusId, parentStatusText, taskId, taskDate, taskDateMod, taskBegin, taskStateId, taskTechUserId, content
+        )
+    }
+
+    return [PSCustomObject]@{
+        tasks = [PSCustomObject]@{
+            chiamate = @(Get-SortedPublicTasks -Items $taskResultsByCategory.chiamate)
+            problemi = @(Get-SortedPublicTasks -Items $taskResultsByCategory.problemi)
+            cambiamenti = @(Get-SortedPublicTasks -Items $taskResultsByCategory.cambiamenti)
+        }
+        comments = $commentResults
+        followupRequestCount = @($FollowupRequests).Count
+    }
+}
+
 
 function Get-DashboardData {
     param ([System.Net.HttpListenerContext]$StreamContext = $null)
@@ -1205,122 +1650,122 @@ function Get-DashboardData {
         cambiamenti = 0
     }
 
-    $stats = $null
-    $ticketTasks = @()
-    $problemTasks = @()
-    $changeTasks = @()
-
     if ($null -ne $StreamContext) {
         Write-NdjsonEvent -Context $StreamContext -Object ([PSCustomObject]@{
             type = "refreshStart"
         })
     }
 
-    # Ticket list and ticket tasks first.
+    # The three parent lists are comparatively light. They are loaded first so
+    # the four numeric cards, totals and list caches can be updated immediately.
     $tickets = @(Get-AllOpenItems -ResourcePath $ticketResourcePath -LogLabel "ticket")
+    $problems = @(Get-AllOpenItems -ResourcePath $problemResourcePath -LogLabel "problemi")
+    $changes = @(Get-AllOpenItems -ResourcePath $changeResourcePath -LogLabel "cambiamenti")
+
     $stats = Get-DashboardStatsFromTickets -Tickets $tickets
     $ticketListViews = Get-TicketListViews -Tickets $tickets
-    $totals.chiamate = [int]$tickets.Count
-
-    foreach ($property in $ticketListViews.PSObject.Properties) {
-        $allLists[$property.Name] = @($property.Value)
-    }
-
-    if ($null -ne $StreamContext) {
-        Write-NdjsonEvent -Context $StreamContext -Object ([PSCustomObject]@{
-            type = "categoryStart"
-            category = "chiamate"
-            total = $tickets.Count
-            stats = $stats
-            totalsPatch = [PSCustomObject]@{ chiamate = [int]$tickets.Count }
-            listViews = $ticketListViews
-        })
-    }
-
-    $ticketTasks = @(Invoke-TaskCategoryScan `
-        -Items $tickets `
-        -Category "chiamate" `
-        -TaskEndpointTemplate $ticketTaskEndpointTemplate `
-        -FormPath "/front/ticket.form.php" `
-        -StreamContext $StreamContext)
-
-    if ($null -ne $StreamContext) {
-        Write-NdjsonEvent -Context $StreamContext -Object ([PSCustomObject]@{
-            type = "categoryResult"
-            category = "chiamate"
-            items = @($ticketTasks)
-            updatedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-        })
-    }
-
-    # Problems are fetched and displayed only after ticket tasks have finished.
-    $problems = @(Get-AllOpenItems -ResourcePath $problemResourcePath -LogLabel "problemi")
     $problemListViews = Get-ProblemListViews -Problems $problems
-    $totals.problemi = [int]$problems.Count
-
-    foreach ($property in $problemListViews.PSObject.Properties) {
-        $allLists[$property.Name] = @($property.Value)
-    }
-
-    if ($null -ne $StreamContext) {
-        Write-NdjsonEvent -Context $StreamContext -Object ([PSCustomObject]@{
-            type = "categoryStart"
-            category = "problemi"
-            total = $problems.Count
-            totalsPatch = [PSCustomObject]@{ problemi = [int]$problems.Count }
-            listViews = $problemListViews
-        })
-    }
-
-    $problemTasks = @(Invoke-TaskCategoryScan `
-        -Items $problems `
-        -Category "problemi" `
-        -TaskEndpointTemplate $problemTaskEndpointTemplate `
-        -FormPath "/front/problem.form.php" `
-        -StreamContext $StreamContext)
-
-    if ($null -ne $StreamContext) {
-        Write-NdjsonEvent -Context $StreamContext -Object ([PSCustomObject]@{
-            type = "categoryResult"
-            category = "problemi"
-            items = @($problemTasks)
-            updatedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-        })
-    }
-
-    # Changes are fetched and displayed last.
-    $changes = @(Get-AllOpenItems -ResourcePath $changeResourcePath -LogLabel "cambiamenti")
     $changeListViews = Get-ChangeListViews -Changes $changes
+
+    $totals.chiamate = [int]$tickets.Count
+    $totals.problemi = [int]$problems.Count
     $totals.cambiamenti = [int]$changes.Count
 
-    foreach ($property in $changeListViews.PSObject.Properties) {
-        $allLists[$property.Name] = @($property.Value)
+    foreach ($viewSet in @($ticketListViews, $problemListViews, $changeListViews)) {
+        foreach ($property in $viewSet.PSObject.Properties) {
+            $allLists[$property.Name] = @($property.Value)
+        }
     }
 
     if ($null -ne $StreamContext) {
+        # Summary data is streamed before any expensive detail request.
         Write-NdjsonEvent -Context $StreamContext -Object ([PSCustomObject]@{
-            type = "categoryStart"
-            category = "cambiamenti"
-            total = $changes.Count
-            totalsPatch = [PSCustomObject]@{ cambiamenti = [int]$changes.Count }
-            listViews = $changeListViews
+            type = "summary"
+            stats = $stats
+            totals = [PSCustomObject]$totals
+            lists = [PSCustomObject]$allLists
         })
+
+        foreach ($categoryInfo in @(
+            [PSCustomObject]@{ category = "chiamate"; total = $tickets.Count },
+            [PSCustomObject]@{ category = "problemi"; total = $problems.Count },
+            [PSCustomObject]@{ category = "cambiamenti"; total = $changes.Count }
+        )) {
+            Write-NdjsonEvent -Context $StreamContext -Object ([PSCustomObject]@{
+                type = "categoryStart"
+                category = $categoryInfo.category
+                total = [int]$categoryInfo.total
+            })
+        }
     }
 
-    $changeTasks = @(Invoke-TaskCategoryScan `
-        -Items $changes `
-        -Category "cambiamenti" `
-        -TaskEndpointTemplate $changeTaskEndpointTemplate `
-        -FormPath "/front/change.form.php" `
-        -StreamContext $StreamContext)
+    # Only new or modified elements need a follow-up request. These requests are
+    # mixed into the same global runspace pool as task requests, allowing both
+    # kinds of detail calls to run concurrently under TASK_CONCURRENCY.
+    Write-Log -Level DEBUG -Message "Preparazione richieste aggiornamenti recenti"
+
+    $followupRequests = @(
+        Get-RecentUpdateFollowupRequests `
+            -Tickets $tickets `
+            -Problems $problems `
+            -Changes $changes
+    )
+
+    Write-Log -Level DEBUG -Message "Avvio scansione dettagli concorrente" -Data @{
+        followupRequests = $followupRequests.Count
+        ticketRequests = $tickets.Count
+        problemRequests = $problems.Count
+        changeRequests = $changes.Count
+    }
+
+    $detailScan = Invoke-DashboardDetailScan `
+        -Tickets $tickets `
+        -Problems $problems `
+        -Changes $changes `
+        -FollowupRequests $followupRequests `
+        -StreamContext $StreamContext
+
+    $ticketTasks = @($detailScan.tasks.chiamate)
+    $problemTasks = @($detailScan.tasks.problemi)
+    $changeTasks = @($detailScan.tasks.cambiamenti)
+
+    # Recent updates are calculated before publishing activity results. The
+    # calculation reuses task data and pre-scanned follow-ups, so it does not
+    # issue duplicate GLPI requests.
+    Write-Log -Level DEBUG -Message "Calcolo aggiornamenti recenti"
+
+    $updates = Update-RecentUpdatesState `
+        -Tickets $tickets `
+        -Problems $problems `
+        -Changes $changes `
+        -TicketTasks $ticketTasks `
+        -ProblemTasks $problemTasks `
+        -ChangeTasks $changeTasks `
+        -PreScannedComments $detailScan.comments
 
     if ($null -ne $StreamContext) {
         Write-NdjsonEvent -Context $StreamContext -Object ([PSCustomObject]@{
-            type = "categoryResult"
-            category = "cambiamenti"
-            items = @($changeTasks)
-            updatedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            type = "updates"
+            items = @($updates.items)
+            count = [int]$updates.count
+            generatedAt = [string]$updates.generatedAt
+            newEventIds = @($updates.newEventIds)
+            baselineInitialized = [bool]$updates.baselineInitialized
         })
+
+        # Activity panels are published after recent updates, as requested.
+        foreach ($categoryResult in @(
+            [PSCustomObject]@{ category = "chiamate"; items = @($ticketTasks) },
+            [PSCustomObject]@{ category = "problemi"; items = @($problemTasks) },
+            [PSCustomObject]@{ category = "cambiamenti"; items = @($changeTasks) }
+        )) {
+            Write-NdjsonEvent -Context $StreamContext -Object ([PSCustomObject]@{
+                type = "categoryResult"
+                category = $categoryResult.category
+                items = @($categoryResult.items)
+                updatedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            })
+        }
     }
 
     $elapsedMs = [int]((Get-Date) - $started).TotalMilliseconds
@@ -1333,6 +1778,8 @@ function Get-DashboardData {
         ticketTasks = $ticketTasks.Count
         problemTasks = $problemTasks.Count
         changeTasks = $changeTasks.Count
+        followupRequests = $followupRequests.Count
+        concurrency = $script:taskConcurrency
         elapsedMs = $elapsedMs
     }
 
@@ -1343,10 +1790,16 @@ function Get-DashboardData {
         problemi = @($problemTasks)
         cambiamenti = @($changeTasks)
         lists = [PSCustomObject]$allLists
+        updates = [PSCustomObject]@{
+            items = @($updates.items)
+            count = [int]$updates.count
+            generatedAt = [string]$updates.generatedAt
+        }
         aggiornatoAlle = $updatedAt
         durataMs = $elapsedMs
     }
 }
+
 
 # =========================
 # LIST PAGE DATA
@@ -1391,7 +1844,7 @@ function New-ListRow {
         type = [string]$typeText
         updatedAt = Format-DateValue -Date $updatedDate
         sortDate = $updatedDate
-        url = "{0}{1}?id={2}" -f $script:glpiWebBaseUrl.TrimEnd("/"), $FormPath, [int]$id
+        url = ("{0}{1}?id={2}" -f $script:glpiWebBaseUrl.TrimEnd("/"), $FormPath, [int]$id)
     }
 }
 
@@ -1893,6 +2346,992 @@ function Set-ItemNoteOrder {
     }
 }
 
+# =========================
+# RECENT UPDATES DATABASE
+# =========================
+
+function Get-StableHash {
+    param ($Value)
+
+    $text = if ($null -eq $Value) { "" } elseif ($Value -is [string]) { $Value } else { $Value | ConvertTo-Json -Depth 30 -Compress }
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+
+    try {
+        $hash = $sha256.ComputeHash($bytes)
+        return (($hash | ForEach-Object { $_.ToString("x2") }) -join "")
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
+
+function New-EmptyUpdatesDatabase {
+    return [PSCustomObject]@{
+        version = 1
+        events = @()
+    }
+}
+
+function New-EmptyUpdatesSnapshot {
+    return [PSCustomObject]@{
+        version = 1
+        initializedAt = $null
+        items = [PSCustomObject]@{}
+    }
+}
+
+function Write-JsonFileAtomic {
+    param (
+        [string]$Path,
+        $Value
+    )
+
+    $temporaryPath = "$Path.tmp"
+    $json = $Value | ConvertTo-Json -Depth 80
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+
+    try {
+        [System.IO.File]::WriteAllText($temporaryPath, $json, $utf8NoBom)
+
+        if (Test-Path $Path) {
+            try {
+                [System.IO.File]::Replace($temporaryPath, $Path, $null, $true)
+            }
+            catch {
+                Move-Item -Path $temporaryPath -Destination $Path -Force
+            }
+        }
+        else {
+            Move-Item -Path $temporaryPath -Destination $Path -Force
+        }
+    }
+    finally {
+        if (Test-Path $temporaryPath) {
+            Remove-Item -Path $temporaryPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Move-BrokenJsonFile {
+    param ([string]$Path)
+
+    if (-not (Test-Path $Path)) { return $null }
+
+    $timestamp = (Get-Date).ToString("yyyyMMddHHmmss")
+    $brokenPath = "$Path.broken-$timestamp"
+
+    try {
+        Move-Item -Path $Path -Destination $brokenPath -Force
+        return $brokenPath
+    }
+    catch {
+        Write-Log -Level WARN -Message "Impossibile rinominare il file JSON corrotto" -Data @{
+            path = $Path
+            error = $_.Exception.Message
+        }
+        return $null
+    }
+}
+
+function Read-UpdatesDatabaseUnlocked {
+    if (-not (Test-Path $updatesDbPath)) {
+        $empty = New-EmptyUpdatesDatabase
+        Write-JsonFileAtomic -Path $updatesDbPath -Value $empty
+        return $empty
+    }
+
+    try {
+        $raw = [System.IO.File]::ReadAllText($updatesDbPath, [System.Text.Encoding]::UTF8)
+        if ([string]::IsNullOrWhiteSpace($raw)) { throw "File vuoto" }
+
+        $database = $raw | ConvertFrom-Json
+        if ($null -eq $database) { throw "JSON non valido" }
+
+        if ($null -eq (Get-PropertyObject -Object $database -Name "events")) {
+            $database | Add-Member -NotePropertyName events -NotePropertyValue @() -Force
+        }
+
+        return $database
+    }
+    catch {
+        $brokenPath = Move-BrokenJsonFile -Path $updatesDbPath
+        Write-Log -Level WARN -Message "Database aggiornamenti corrotto: creato un nuovo database" -Data @{
+            path = $updatesDbPath
+            brokenPath = $brokenPath
+            error = $_.Exception.Message
+        }
+
+        $empty = New-EmptyUpdatesDatabase
+        Write-JsonFileAtomic -Path $updatesDbPath -Value $empty
+        return $empty
+    }
+}
+
+function Read-UpdatesSnapshotUnlocked {
+    if (-not (Test-Path $updatesSnapshotPath)) {
+        return New-EmptyUpdatesSnapshot
+    }
+
+    try {
+        $raw = [System.IO.File]::ReadAllText($updatesSnapshotPath, [System.Text.Encoding]::UTF8)
+        if ([string]::IsNullOrWhiteSpace($raw)) { throw "File vuoto" }
+
+        $snapshot = $raw | ConvertFrom-Json
+        if ($null -eq $snapshot) { throw "JSON non valido" }
+
+        if ($null -eq (Get-PropertyObject -Object $snapshot -Name "items")) {
+            $snapshot | Add-Member -NotePropertyName items -NotePropertyValue ([PSCustomObject]@{}) -Force
+        }
+
+        return $snapshot
+    }
+    catch {
+        $brokenPath = Move-BrokenJsonFile -Path $updatesSnapshotPath
+        Write-Log -Level WARN -Message "Snapshot aggiornamenti corrotto: verrà ricreato" -Data @{
+            path = $updatesSnapshotPath
+            brokenPath = $brokenPath
+            error = $_.Exception.Message
+        }
+
+        return New-EmptyUpdatesSnapshot
+    }
+}
+
+function Invoke-WithUpdatesLock {
+    param ([scriptblock]$ScriptBlock)
+
+    [System.Threading.Monitor]::Enter($script:updatesLock)
+    try {
+        return & $ScriptBlock
+    }
+    finally {
+        [System.Threading.Monitor]::Exit($script:updatesLock)
+    }
+}
+
+function Convert-PropertyBagToHashtable {
+    param ($Value)
+
+    $result = @{}
+    if ($null -eq $Value) { return $result }
+
+    foreach ($property in $Value.PSObject.Properties) {
+        $result[[string]$property.Name] = $property.Value
+    }
+
+    return $result
+}
+
+function Get-AssignedUserIds {
+    param ($Item)
+
+    $ids = New-Object "System.Collections.Generic.HashSet[int]"
+    $team = Get-PropValue -Object $Item -Names @("team")
+
+    foreach ($member in @(Convert-ToArray $team)) {
+        $role = (Get-TextValue (Get-PropValue -Object $member -Names @("role"))).Trim().ToLowerInvariant()
+        if ($role -ne "assigned") { continue }
+
+        $memberId = Get-IdValue (Get-PropValue -Object $member -Names @("id", "users_id", "user_id", "user"))
+        if ($null -ne $memberId) {
+            [void]$ids.Add([int]$memberId)
+        }
+    }
+
+    return @($ids | Sort-Object)
+}
+
+function Get-IncompleteNoteItemKeys {
+    return Invoke-WithNotesLock {
+        $database = Read-NotesDatabaseUnlocked
+        $keys = @{}
+
+        foreach ($note in @(Convert-ToArray (Get-PropValue -Object $database -Names @("notes")))) {
+            $completed = [bool](Get-PropValue -Object $note -Names @("completed"))
+            if ($completed) { continue }
+
+            $kind = ([string](Get-PropValue -Object $note -Names @("kind"))).Trim().ToLowerInvariant()
+            $itemId = Get-IdValue (Get-PropValue -Object $note -Names @("itemId"))
+
+            if ((Test-ValidNoteKind -Kind $kind) -and $null -ne $itemId) {
+                $keys["{0}:{1}" -f $kind, [int]$itemId] = $true
+            }
+        }
+
+        return $keys
+    }
+}
+
+function Get-TaskSnapshotHash {
+    param ($Task)
+
+    $stable = [ordered]@{
+        id = [int](Get-IdValue (Get-PropValue -Object $Task -Names @("taskId")))
+        state = Get-IdValue (Get-PropValue -Object $Task -Names @("taskStateId"))
+        content = [string](Get-PropValue -Object $Task -Names @("content"))
+        dateMod = [string](Get-PropValue -Object $Task -Names @("taskDateMod", "taskDate"))
+        technician = Get-IdValue (Get-PropValue -Object $Task -Names @("taskTechUserId"))
+        begin = [string](Get-PropValue -Object $Task -Names @("taskBegin"))
+    }
+
+    return Get-StableHash -Value ([PSCustomObject]$stable)
+}
+
+function Get-ItemKey {
+    param (
+        [string]$Kind,
+        [int]$ItemId
+    )
+
+    return "{0}:{1}" -f $Kind.Trim().ToLowerInvariant(), $ItemId
+}
+
+function Get-TasksForItem {
+    param (
+        [array]$Tasks,
+        [int]$ItemId
+    )
+
+    return @(
+        $Tasks | Where-Object {
+            [int](Get-IdValue (Get-PropValue -Object $_ -Names @("parentId"))) -eq $ItemId
+        }
+    )
+}
+
+function Get-CommentIdsFromTimelineResponse {
+    param ($Response)
+
+    $ids = New-Object "System.Collections.Generic.HashSet[int]"
+
+    foreach ($entry in @(Convert-ToArray $Response)) {
+        $data = Get-TaskData -Task $entry
+        $id = Get-IdValue (Get-PropValue -Object $data -Names @("id"))
+        if ($null -ne $id) { [void]$ids.Add([int]$id) }
+    }
+
+    return @($ids | Sort-Object)
+}
+
+function Invoke-FollowupScan {
+    param ([array]$Requests)
+
+    $result = @{}
+    if ($Requests.Count -eq 0) { return $result }
+
+    $token = Get-AccessToken
+    $workerScript = {
+        param ([string]$Endpoint, [string]$AccessToken)
+
+        $ErrorActionPreference = "Stop"
+
+        function Convert-WorkerArray {
+            param ($Value)
+
+            if ($null -eq $Value) { return @() }
+            if ($Value -is [System.Array]) { return @($Value) }
+
+            foreach ($propertyName in @("data", "items", "results", "member", "hydra:member")) {
+                $property = $null
+                try { $property = $Value.PSObject.Properties[$propertyName] } catch {}
+                if ($null -ne $property) { return Convert-WorkerArray $property.Value }
+            }
+
+            return @($Value)
+        }
+
+        function Get-WorkerId {
+            param ($Value)
+
+            if ($null -eq $Value) { return $null }
+            if ($Value -is [int] -or $Value -is [long]) { return [long]$Value }
+
+            if ($Value -is [string]) {
+                $parsed = 0L
+                if ([long]::TryParse($Value, [ref]$parsed)) { return $parsed }
+                return $null
+            }
+
+            $property = $null
+            try { $property = $Value.PSObject.Properties["id"] } catch {}
+            if ($null -ne $property) { return Get-WorkerId $property.Value }
+            return $null
+        }
+
+        try {
+            $response = Invoke-RestMethod `
+                -Uri $Endpoint `
+                -Method GET `
+                -Headers @{
+                    Authorization = "Bearer $AccessToken"
+                    accept = "application/json"
+                    "Accept-Language" = "en_GB"
+                } `
+                -ErrorAction Stop
+
+            $ids = New-Object "System.Collections.Generic.HashSet[long]"
+            foreach ($entry in @(Convert-WorkerArray $response)) {
+                $data = $entry
+                $itemProperty = $null
+                try { $itemProperty = $entry.PSObject.Properties["item"] } catch {}
+                if ($null -ne $itemProperty -and $null -ne $itemProperty.Value) { $data = $itemProperty.Value }
+
+                $idProperty = $null
+                try { $idProperty = $data.PSObject.Properties["id"] } catch {}
+                if ($null -ne $idProperty) {
+                    $id = Get-WorkerId $idProperty.Value
+                    if ($null -ne $id) { [void]$ids.Add([long]$id) }
+                }
+            }
+
+            [PSCustomObject]@{
+                success = $true
+                ids = @($ids | Sort-Object)
+                message = $null
+            }
+        }
+        catch {
+            [PSCustomObject]@{
+                success = $false
+                ids = @()
+                message = $_.Exception.Message
+            }
+        }
+    }
+
+    $runspacePool = [runspacefactory]::CreateRunspacePool(1, $script:taskConcurrency)
+    $runspacePool.Open()
+    $jobs = New-Object System.Collections.ArrayList
+
+    try {
+        foreach ($request in $Requests) {
+            $powerShell = [powershell]::Create()
+            $powerShell.RunspacePool = $runspacePool
+            [void]$powerShell.AddScript($workerScript.ToString())
+            [void]$powerShell.AddArgument([string](Get-PropValue -Object $request -Names @("endpoint")))
+            [void]$powerShell.AddArgument($token)
+
+            [void]$jobs.Add([PSCustomObject]@{
+                PowerShell = $powerShell
+                Handle = $powerShell.BeginInvoke()
+                ItemKey = [string](Get-PropValue -Object $request -Names @("itemKey"))
+            })
+        }
+
+        while ($jobs.Count -gt 0) {
+            $finished = @($jobs | Where-Object { $_.Handle.IsCompleted })
+            if ($finished.Count -eq 0) {
+                Start-Sleep -Milliseconds 40
+                continue
+            }
+
+            foreach ($job in $finished) {
+                try {
+                    $output = $job.PowerShell.EndInvoke($job.Handle)
+                    $workerResult = if ($output.Count -gt 0) { $output[$output.Count - 1] } else { $null }
+
+                    if ($null -ne $workerResult -and $workerResult.success) {
+                        $result[$job.ItemKey] = @($workerResult.ids)
+                    }
+                    else {
+                        Write-Log -Level WARN -Message "Impossibile leggere i commenti timeline" -Data @{
+                            itemKey = $job.ItemKey
+                            message = if ($null -ne $workerResult) { $workerResult.message } else { "Risposta vuota" }
+                        }
+                    }
+                }
+                catch {
+                    Write-Log -Level WARN -Message "Errore lettura commenti timeline" -Data @{
+                        itemKey = $job.ItemKey
+                        message = $_.Exception.Message
+                    }
+                }
+                finally {
+                    try { $job.PowerShell.Dispose() } catch {}
+                    [void]$jobs.Remove($job)
+                }
+            }
+        }
+    }
+    finally {
+        foreach ($job in @($jobs)) {
+            try { $job.PowerShell.Stop() } catch {}
+            try { $job.PowerShell.Dispose() } catch {}
+        }
+        try { $runspacePool.Close() } catch {}
+        try { $runspacePool.Dispose() } catch {}
+    }
+
+    return $result
+}
+
+function New-UpdateSnapshotEntry {
+    param (
+        $Item,
+        [string]$Kind,
+        [string]$FormPath,
+        [array]$Tasks,
+        [array]$CommentIds,
+        [hashtable]$IncompleteNoteKeys
+    )
+
+    $itemId = Get-IdValue (Get-PropValue -Object $Item -Names @("id"))
+    if ($null -eq $itemId) { return $null }
+
+    $itemId = [int]$itemId
+    $itemKey = Get-ItemKey -Kind $Kind -ItemId $itemId
+    $title = Get-PropValue -Object $Item -Names @("name", "title")
+    if (-not $title) { $title = "(senza titolo)" }
+
+    $assignedUserIds = @(Get-AssignedUserIds -Item $Item)
+    $assignedToMe = $assignedUserIds -contains [int]$script:targetUserId
+    $taskIds = New-Object "System.Collections.Generic.List[int]"
+    $taskHashes = [ordered]@{}
+
+    foreach ($task in @($Tasks)) {
+        $taskId = Get-IdValue (Get-PropValue -Object $task -Names @("taskId"))
+        if ($null -eq $taskId) { continue }
+
+        $taskId = [int]$taskId
+        $taskIds.Add($taskId)
+        $taskHashes[[string]$taskId] = Get-TaskSnapshotHash -Task $task
+    }
+
+    $dateMod = Get-ItemDate -Item $Item -FieldNames @("date_mod", "date_creation", "date")
+    $dateModText = if ($dateMod -eq [datetime]::MinValue) { "" } else { $dateMod.ToString("o") }
+    $hasIncompleteNote = $IncompleteNoteKeys.ContainsKey($itemKey)
+    $hasOpenAssignedTask = $taskIds.Count -gt 0
+    $isUnassigned = $assignedUserIds.Count -eq 0
+    $statusId = Get-ItemStatusId -Item $Item
+    $isNewAndUnassigned = ($statusId -eq 1 -and $isUnassigned)
+    $isRelevant = $assignedToMe -or $hasOpenAssignedTask -or $hasIncompleteNote -or $isNewAndUnassigned
+
+    return [PSCustomObject]@{
+        kind = $Kind
+        id = $itemId
+        title = [string]$title
+        statusId = $statusId
+        statusText = Get-ItemStatusText -Item $Item -Kind $Kind
+        assignedUserIds = @($assignedUserIds)
+        assignedToMe = [bool]$assignedToMe
+        isUnassigned = [bool]$isUnassigned
+        isNewAndUnassigned = [bool]$isNewAndUnassigned
+        dateMod = $dateModText
+        taskIds = @($taskIds | Sort-Object)
+        taskHashes = [PSCustomObject]$taskHashes
+        commentIds = @($CommentIds | Sort-Object -Unique)
+        hasOpenAssignedTask = [bool]$hasOpenAssignedTask
+        hasIncompleteNote = [bool]$hasIncompleteNote
+        isRelevant = [bool]$isRelevant
+        url = ("{0}{1}?id={2}" -f $script:glpiWebBaseUrl.TrimEnd("/"), $FormPath, $itemId)
+    }
+}
+
+function Test-IdArrayContains {
+    param (
+        [array]$Values,
+        [int]$Id
+    )
+
+    foreach ($value in @($Values)) {
+        $parsed = Get-IdValue $value
+        if ($null -ne $parsed -and [int]$parsed -eq $Id) { return $true }
+    }
+
+    return $false
+}
+
+function Get-AddedIds {
+    param (
+        [array]$OldValues,
+        [array]$NewValues
+    )
+
+    $oldSet = @{}
+    foreach ($value in @($OldValues)) {
+        $id = Get-IdValue $value
+        if ($null -ne $id) { $oldSet[[string][int]$id] = $true }
+    }
+
+    return @(
+        foreach ($value in @($NewValues)) {
+            $id = Get-IdValue $value
+            if ($null -ne $id -and -not $oldSet.ContainsKey([string][int]$id)) {
+                [int]$id
+            }
+        }
+    )
+}
+
+function Test-IdArraysEqual {
+    param (
+        [array]$Left,
+        [array]$Right
+    )
+
+    $leftText = (@($Left | ForEach-Object { [int](Get-IdValue $_) } | Sort-Object) -join ",")
+    $rightText = (@($Right | ForEach-Object { [int](Get-IdValue $_) } | Sort-Object) -join ",")
+    return $leftText -eq $rightText
+}
+
+function New-GroupedUpdateEvent {
+    param (
+        [string]$ItemKey,
+        $Current,
+        [array]$EventTypes,
+        [array]$Descriptions,
+        [array]$SignatureParts
+    )
+
+    $detectedAt = (Get-Date).ToString("o")
+    $signature = @($SignatureParts + @([string](Get-PropValue -Object $Current -Names @("dateMod")))) -join "|"
+    $eventHash = Get-StableHash -Value ("{0}|{1}" -f $ItemKey, $signature)
+
+    return [PSCustomObject]@{
+        eventId = ("{0}:{1}" -f $ItemKey, $eventHash.Substring(0, 24))
+        itemKey = $ItemKey
+        kind = [string](Get-PropValue -Object $Current -Names @("kind"))
+        itemId = [int](Get-IdValue (Get-PropValue -Object $Current -Names @("id")))
+        title = [string](Get-PropValue -Object $Current -Names @("title"))
+        url = [string](Get-PropValue -Object $Current -Names @("url"))
+        eventType = [string]$EventTypes[0]
+        eventTypes = @($EventTypes)
+        label = [string]$Descriptions[0]
+        details = (@($Descriptions) -join " · ")
+        detectedAt = $detectedAt
+        dismissed = $false
+    }
+}
+
+function Get-VisibleUpdatesUnlocked {
+    param (
+        $Database,
+        $Snapshot
+    )
+
+    $cutoff = (Get-Date).AddHours(-1 * $script:updateRetentionHours)
+    $currentItems = Convert-PropertyBagToHashtable (Get-PropValue -Object $Snapshot -Names @("items"))
+
+    return @(
+        @(Convert-ToArray (Get-PropValue -Object $Database -Names @("events"))) |
+            Where-Object {
+                $dismissed = [bool](Get-PropValue -Object $_ -Names @("dismissed"))
+                if ($dismissed) { return $false }
+
+                $detectedAt = [datetime]::MinValue
+                if (-not [datetime]::TryParse([string](Get-PropValue -Object $_ -Names @("detectedAt")), [ref]$detectedAt)) {
+                    return $false
+                }
+                if ($detectedAt -lt $cutoff) { return $false }
+
+                $itemKey = [string](Get-PropValue -Object $_ -Names @("itemKey"))
+                if (-not $currentItems.ContainsKey($itemKey)) { return $false }
+
+                return [bool](Get-PropValue -Object $currentItems[$itemKey] -Names @("isRelevant"))
+            } |
+            Sort-Object @{ Expression = { [datetime](Get-PropValue -Object $_ -Names @("detectedAt")) }; Descending = $true }
+    )
+}
+
+function Get-RecentUpdates {
+    return Invoke-WithUpdatesLock {
+        $database = Read-UpdatesDatabaseUnlocked
+        $snapshot = Read-UpdatesSnapshotUnlocked
+        $items = @(Get-VisibleUpdatesUnlocked -Database $database -Snapshot $snapshot)
+
+        return [PSCustomObject]@{
+            items = $items
+            count = $items.Count
+            generatedAt = (Get-Date).ToString("o")
+        }
+    }
+}
+
+function Dismiss-RecentUpdate {
+    param ([string]$EventId)
+
+    $normalizedId = ($EventId + "").Trim()
+    if ([string]::IsNullOrWhiteSpace($normalizedId) -or $normalizedId.Length -gt 200) {
+        throw "ID aggiornamento non valido."
+    }
+
+    return Invoke-WithUpdatesLock {
+        $database = Read-UpdatesDatabaseUnlocked
+        $found = $false
+
+        foreach ($event in @(Convert-ToArray (Get-PropValue -Object $database -Names @("events")))) {
+            if ([string](Get-PropValue -Object $event -Names @("eventId")) -eq $normalizedId) {
+                $event.dismissed = $true
+                $found = $true
+                break
+            }
+        }
+
+        if (-not $found) { throw "Aggiornamento non trovato." }
+        Write-JsonFileAtomic -Path $updatesDbPath -Value $database
+        return (Get-RecentUpdates)
+    }
+}
+
+function Dismiss-AllRecentUpdates {
+    return Invoke-WithUpdatesLock {
+        $database = Read-UpdatesDatabaseUnlocked
+
+        foreach ($event in @(Convert-ToArray (Get-PropValue -Object $database -Names @("events")))) {
+            $event.dismissed = $true
+        }
+
+        Write-JsonFileAtomic -Path $updatesDbPath -Value $database
+        $snapshot = Read-UpdatesSnapshotUnlocked
+        $items = @(Get-VisibleUpdatesUnlocked -Database $database -Snapshot $snapshot)
+
+        return [PSCustomObject]@{
+            items = $items
+            count = $items.Count
+            generatedAt = (Get-Date).ToString("o")
+        }
+    }
+}
+
+function Get-RecentUpdateFollowupRequests {
+    param (
+        [array]$Tickets,
+        [array]$Problems,
+        [array]$Changes
+    )
+
+    return Invoke-WithUpdatesLock {
+        $oldSnapshot = Read-UpdatesSnapshotUnlocked
+        $oldItems = Convert-PropertyBagToHashtable (Get-PropValue -Object $oldSnapshot -Names @("items"))
+        $isFirstInitialization = [string]::IsNullOrWhiteSpace([string](Get-PropValue -Object $oldSnapshot -Names @("initializedAt")))
+        $requests = New-Object "System.Collections.Generic.List[object]"
+
+        foreach ($definition in @(
+            [PSCustomObject]@{ items = $Tickets; kind = "ticket"; followupTemplate = $ticketFollowupEndpointTemplate },
+            [PSCustomObject]@{ items = $Problems; kind = "problem"; followupTemplate = $problemFollowupEndpointTemplate },
+            [PSCustomObject]@{ items = $Changes; kind = "change"; followupTemplate = $changeFollowupEndpointTemplate }
+        )) {
+            foreach ($item in @($definition.items)) {
+                $itemId = Get-IdValue (Get-PropValue -Object $item -Names @("id"))
+                if ($null -eq $itemId) { continue }
+
+                $itemId = [int]$itemId
+                $itemKey = Get-ItemKey -Kind $definition.kind -ItemId $itemId
+                $dateMod = Get-ItemDate -Item $item -FieldNames @("date_mod", "date_creation", "date")
+                $dateModText = if ($dateMod -eq [datetime]::MinValue) { "" } else { $dateMod.ToString("o") }
+                $oldEntry = if ($oldItems.ContainsKey($itemKey)) { $oldItems[$itemKey] } else { $null }
+                $oldDateMod = [string](Get-PropValue -Object $oldEntry -Names @("dateMod"))
+                $scanComments = $isFirstInitialization -or $null -eq $oldEntry -or $oldDateMod -ne $dateModText
+
+                if (-not $scanComments) { continue }
+
+                $requests.Add([PSCustomObject]@{
+                    itemKey = $itemKey
+                    endpoint = ("{0}/{1}" -f $script:apiBaseUrl, ($definition.followupTemplate -f $itemId))
+                })
+            }
+        }
+
+        # Windows PowerShell 5.1 can throw "Argument types do not match" when
+        # the array subexpression operator is applied directly to List[object].
+        # ToArray() avoids that runtime binder bug.
+        return $requests.ToArray()
+    }
+}
+
+
+function Update-RecentUpdatesState {
+    param (
+        [array]$Tickets,
+        [array]$Problems,
+        [array]$Changes,
+        [array]$TicketTasks,
+        [array]$ProblemTasks,
+        [array]$ChangeTasks,
+        [hashtable]$PreScannedComments = $null
+    )
+
+    return Invoke-WithUpdatesLock {
+        $oldSnapshot = Read-UpdatesSnapshotUnlocked
+        $database = Read-UpdatesDatabaseUnlocked
+        $oldItems = Convert-PropertyBagToHashtable (Get-PropValue -Object $oldSnapshot -Names @("items"))
+        $isFirstInitialization = [string]::IsNullOrWhiteSpace([string](Get-PropValue -Object $oldSnapshot -Names @("initializedAt")))
+        $incompleteNoteKeys = Get-IncompleteNoteItemKeys
+
+        $descriptors = New-Object "System.Collections.Generic.List[object]"
+
+        foreach ($definition in @(
+            [PSCustomObject]@{ items = $Tickets; kind = "ticket"; formPath = "/front/ticket.form.php"; followupTemplate = $ticketFollowupEndpointTemplate; tasks = $TicketTasks },
+            [PSCustomObject]@{ items = $Problems; kind = "problem"; formPath = "/front/problem.form.php"; followupTemplate = $problemFollowupEndpointTemplate; tasks = $ProblemTasks },
+            [PSCustomObject]@{ items = $Changes; kind = "change"; formPath = "/front/change.form.php"; followupTemplate = $changeFollowupEndpointTemplate; tasks = $ChangeTasks }
+        )) {
+            foreach ($item in @($definition.items)) {
+                $itemId = Get-IdValue (Get-PropValue -Object $item -Names @("id"))
+                if ($null -eq $itemId) { continue }
+
+                $itemId = [int]$itemId
+                $itemKey = Get-ItemKey -Kind $definition.kind -ItemId $itemId
+                $dateMod = Get-ItemDate -Item $item -FieldNames @("date_mod", "date_creation", "date")
+                $dateModText = if ($dateMod -eq [datetime]::MinValue) { "" } else { $dateMod.ToString("o") }
+                $oldEntry = if ($oldItems.ContainsKey($itemKey)) { $oldItems[$itemKey] } else { $null }
+                $oldDateMod = [string](Get-PropValue -Object $oldEntry -Names @("dateMod"))
+                $scanComments = $isFirstInitialization -or $null -eq $oldEntry -or $oldDateMod -ne $dateModText
+
+                $descriptors.Add([PSCustomObject]@{
+                    item = $item
+                    itemId = $itemId
+                    itemKey = $itemKey
+                    kind = [string]$definition.kind
+                    formPath = [string]$definition.formPath
+                    followupTemplate = [string]$definition.followupTemplate
+                    tasks = @(Get-TasksForItem -Tasks @($definition.tasks) -ItemId $itemId)
+                    oldEntry = $oldEntry
+                    scanComments = [bool]$scanComments
+                })
+            }
+        }
+
+        $followupRequests = @(
+            foreach ($descriptor in $descriptors) {
+                if (-not $descriptor.scanComments) { continue }
+
+                [PSCustomObject]@{
+                    itemKey = $descriptor.itemKey
+                    endpoint = ("{0}/{1}" -f $script:apiBaseUrl, ($descriptor.followupTemplate -f $descriptor.itemId))
+                }
+            }
+        )
+
+        $scannedComments = if ($null -ne $PreScannedComments) {
+            $PreScannedComments
+        }
+        else {
+            Invoke-FollowupScan -Requests $followupRequests
+        }
+        $newItems = [ordered]@{}
+
+        foreach ($descriptor in $descriptors) {
+            $oldCommentIds = @(Convert-ToArray (Get-PropValue -Object $descriptor.oldEntry -Names @("commentIds")))
+            $commentIds = if ($scannedComments.ContainsKey($descriptor.itemKey)) {
+                @($scannedComments[$descriptor.itemKey])
+            }
+            else {
+                @($oldCommentIds)
+            }
+
+            $entry = New-UpdateSnapshotEntry `
+                -Item $descriptor.item `
+                -Kind $descriptor.kind `
+                -FormPath $descriptor.formPath `
+                -Tasks $descriptor.tasks `
+                -CommentIds $commentIds `
+                -IncompleteNoteKeys $incompleteNoteKeys
+
+            if ($null -ne $entry) { $newItems[$descriptor.itemKey] = $entry }
+        }
+
+        $newEvents = New-Object "System.Collections.Generic.List[object]"
+
+        if (-not $isFirstInitialization) {
+            foreach ($itemKey in $newItems.Keys) {
+                $current = $newItems[$itemKey]
+                $old = if ($oldItems.ContainsKey($itemKey)) { $oldItems[$itemKey] } else { $null }
+
+                if ($null -eq $old) {
+                    if (-not [bool](Get-PropValue -Object $current -Names @("isRelevant"))) { continue }
+
+                    $kindLabel = switch ([string](Get-PropValue -Object $current -Names @("kind"))) {
+                        "ticket" { "Nuovo ticket" }
+                        "problem" { "Nuovo problema" }
+                        "change" { "Nuovo cambiamento" }
+                        default { "Nuovo elemento" }
+                    }
+
+                    $newEvents.Add((New-GroupedUpdateEvent `
+                        -ItemKey $itemKey `
+                        -Current $current `
+                        -EventTypes @("item_created") `
+                        -Descriptions @($kindLabel) `
+                        -SignatureParts @("created", [string](Get-PropValue -Object $current -Names @("dateMod")))))
+                    continue
+                }
+
+                $eventTypes = New-Object "System.Collections.Generic.List[string]"
+                $descriptions = New-Object "System.Collections.Generic.List[string]"
+                $signatureParts = New-Object "System.Collections.Generic.List[string]"
+
+                $oldStatusId = Get-IdValue (Get-PropValue -Object $old -Names @("statusId"))
+                $newStatusId = Get-IdValue (Get-PropValue -Object $current -Names @("statusId"))
+
+                if ($oldStatusId -ne $newStatusId) {
+                    $oldStatusText = [string](Get-PropValue -Object $old -Names @("statusText"))
+                    $newStatusText = [string](Get-PropValue -Object $current -Names @("statusText"))
+                    $eventTypes.Add("status_changed")
+                    $descriptions.Add(("Cambio stato: {0} → {1}" -f $oldStatusText, $newStatusText))
+                    $signatureParts.Add(("status:{0}:{1}" -f $oldStatusId, $newStatusId))
+                }
+
+                $oldAssigned = @(Convert-ToArray (Get-PropValue -Object $old -Names @("assignedUserIds")))
+                $newAssigned = @(Convert-ToArray (Get-PropValue -Object $current -Names @("assignedUserIds")))
+
+                if (-not (Test-IdArraysEqual -Left $oldAssigned -Right $newAssigned)) {
+                    $wasMine = Test-IdArrayContains -Values $oldAssigned -Id $script:targetUserId
+                    $isMine = Test-IdArrayContains -Values $newAssigned -Id $script:targetUserId
+                    $eventTypes.Add("assignment_changed")
+
+                    if (-not $wasMine -and $isMine) {
+                        $descriptions.Add("Assegnato a te")
+                    }
+                    elseif ($wasMine -and -not $isMine) {
+                        $descriptions.Add("Rimosso dalla tua assegnazione")
+                    }
+                    else {
+                        $descriptions.Add("Cambio assegnazione")
+                    }
+
+                    $signatureParts.Add(("assignment:{0}:{1}" -f (@($oldAssigned | Sort-Object) -join ","), (@($newAssigned | Sort-Object) -join ",")))
+                }
+
+                $oldTaskIds = @(Convert-ToArray (Get-PropValue -Object $old -Names @("taskIds")))
+                $newTaskIds = @(Convert-ToArray (Get-PropValue -Object $current -Names @("taskIds")))
+                $addedTaskIds = @(Get-AddedIds -OldValues $oldTaskIds -NewValues $newTaskIds)
+
+                if ($addedTaskIds.Count -gt 0) {
+                    $eventTypes.Add("task_added")
+                    $descriptions.Add("Nuova attività assegnata")
+                    $signatureParts.Add(("tasks-added:{0}" -f ($addedTaskIds -join ",")))
+                }
+
+                $oldHashes = Convert-PropertyBagToHashtable (Get-PropValue -Object $old -Names @("taskHashes"))
+                $newHashes = Convert-PropertyBagToHashtable (Get-PropValue -Object $current -Names @("taskHashes"))
+                $modifiedTaskIds = @(
+                    foreach ($taskId in $newHashes.Keys) {
+                        if ($oldHashes.ContainsKey($taskId) -and [string]$oldHashes[$taskId] -ne [string]$newHashes[$taskId]) {
+                            $taskId
+                        }
+                    }
+                )
+
+                if ($modifiedTaskIds.Count -gt 0) {
+                    $eventTypes.Add("task_changed")
+                    $descriptions.Add("Attività modificata")
+                    $signatureParts.Add(("tasks-changed:{0}" -f ($modifiedTaskIds -join ",")))
+                }
+
+                $oldCommentIds = @(Convert-ToArray (Get-PropValue -Object $old -Names @("commentIds")))
+                $newCommentIds = @(Convert-ToArray (Get-PropValue -Object $current -Names @("commentIds")))
+                $addedCommentIds = @(Get-AddedIds -OldValues $oldCommentIds -NewValues $newCommentIds)
+
+                if ($addedCommentIds.Count -gt 0) {
+                    $eventTypes.Add("comment_added")
+                    $descriptions.Add("Nuovo commento")
+                    $signatureParts.Add(("comments-added:{0}" -f ($addedCommentIds -join ",")))
+                }
+
+                $oldDateMod = [string](Get-PropValue -Object $old -Names @("dateMod"))
+                $newDateMod = [string](Get-PropValue -Object $current -Names @("dateMod"))
+
+                if ($oldDateMod -ne $newDateMod -and $eventTypes.Count -eq 0) {
+                    $eventTypes.Add("item_updated")
+                    $descriptions.Add("Elemento aggiornato")
+                    $signatureParts.Add(("updated:{0}:{1}" -f $oldDateMod, $newDateMod))
+                }
+
+                if ($eventTypes.Count -gt 0 -and [bool](Get-PropValue -Object $current -Names @("isRelevant"))) {
+                    # Avoid @($genericList) here as well. On Windows
+                    # PowerShell 5.1 it can fail with "Argument types do not match".
+                    $eventTypeArray = $eventTypes.ToArray()
+                    $descriptionArray = $descriptions.ToArray()
+                    $signaturePartArray = $signatureParts.ToArray()
+
+                    $newEvents.Add((New-GroupedUpdateEvent `
+                        -ItemKey $itemKey `
+                        -Current $current `
+                        -EventTypes $eventTypeArray `
+                        -Descriptions $descriptionArray `
+                        -SignatureParts $signaturePartArray))
+                }
+            }
+        }
+
+        $now = Get-Date
+        $cutoff = $now.AddHours(-1 * $script:updateRetentionHours)
+        $existingEvents = @(
+            @(Convert-ToArray (Get-PropValue -Object $database -Names @("events"))) |
+                Where-Object {
+                    $detected = [datetime]::MinValue
+                    [datetime]::TryParse([string](Get-PropValue -Object $_ -Names @("detectedAt")), [ref]$detected) -and
+                    $detected -ge $cutoff
+                }
+        )
+
+        $knownEventIds = @{}
+        foreach ($event in $existingEvents) {
+            $knownEventIds[[string](Get-PropValue -Object $event -Names @("eventId"))] = $true
+        }
+
+        $newEventIds = New-Object "System.Collections.Generic.List[string]"
+        foreach ($event in $newEvents) {
+            $eventId = [string](Get-PropValue -Object $event -Names @("eventId"))
+            if ($knownEventIds.ContainsKey($eventId)) { continue }
+
+            $existingEvents += $event
+            $knownEventIds[$eventId] = $true
+            $newEventIds.Add($eventId)
+        }
+
+        $database.events = @(
+            $existingEvents |
+                Sort-Object @{
+                    Expression = {
+                        $parsedDate = [datetime]::MinValue
+                        [void][datetime]::TryParse(
+                            [string](Get-PropValue -Object $_ -Names @("detectedAt")),
+                            [ref]$parsedDate
+                        )
+                        $parsedDate
+                    }
+                    Descending = $true
+                }
+        )
+        $newSnapshot = [PSCustomObject]@{
+            version = 1
+            initializedAt = if ($isFirstInitialization) { $now.ToString("o") } else { [string](Get-PropValue -Object $oldSnapshot -Names @("initializedAt")) }
+            generatedAt = $now.ToString("o")
+            items = [PSCustomObject]$newItems
+        }
+
+        Write-JsonFileAtomic -Path $updatesDbPath -Value $database
+        Write-JsonFileAtomic -Path $updatesSnapshotPath -Value $newSnapshot
+
+        $visibleItems = @(Get-VisibleUpdatesUnlocked -Database $database -Snapshot $newSnapshot)
+        $visibleIdSet = @{}
+        foreach ($event in $visibleItems) {
+            $visibleIdSet[[string](Get-PropValue -Object $event -Names @("eventId"))] = $true
+        }
+
+        $visibleNewEventIds = @($newEventIds | Where-Object { $visibleIdSet.ContainsKey($_) })
+
+        Write-Log -Level INFO -Message "Aggiornamenti recenti calcolati" -Data @{
+            baseline = $isFirstInitialization
+            created = $visibleNewEventIds.Count
+            visible = $visibleItems.Count
+            retentionHours = $script:updateRetentionHours
+            followupRequests = $followupRequests.Count
+        }
+
+        return [PSCustomObject]@{
+            items = $visibleItems
+            count = $visibleItems.Count
+            generatedAt = $now.ToString("o")
+            newEventIds = @($visibleNewEventIds)
+            baselineInitialized = [bool]$isFirstInitialization
+        }
+    }
+}
+
+
 function Read-JsonRequestBody {
     param ([System.Net.HttpListenerRequest]$Request)
 
@@ -1984,6 +3423,24 @@ function Handle-Request {
     $request = $Context.Request
     $path = $request.Url.AbsolutePath.ToLowerInvariant()
     $method = $request.HttpMethod.ToUpperInvariant()
+
+    # Recent updates are local dashboard notifications. They never modify GLPI.
+    if ($path -eq "/api/updates" -and $method -eq "GET") {
+        Send-Json -Context $Context -Object (Get-RecentUpdates)
+        return
+    }
+
+    if ($path -eq "/api/updates/dismiss" -and $method -eq "POST") {
+        $payload = Read-JsonRequestBody -Request $request
+        $eventId = [string](Get-PropValue -Object $payload -Names @("eventId"))
+        Send-Json -Context $Context -Object (Dismiss-RecentUpdate -EventId $eventId)
+        return
+    }
+
+    if ($path -eq "/api/updates/dismiss-all" -and $method -eq "POST") {
+        Send-Json -Context $Context -Object (Dismiss-AllRecentUpdates)
+        return
+    }
 
     # Notes are stored locally and support a small CRUD API.
     if ($path -eq "/api/notes/counts" -and $method -eq "GET") {
@@ -2111,9 +3568,16 @@ function Handle-Request {
                 })
             }
             catch {
+                $streamErrorDetails = Get-ExceptionDetails -ErrorRecord $_
+
                 Write-Log -Level ERROR -Message "Errore stream dashboard" -Data @{
                     requestId = $RequestId
-                    message = $_.Exception.Message
+                    message = $streamErrorDetails.message
+                    type = $streamErrorDetails.type
+                    statusCode = $streamErrorDetails.statusCode
+                    responseBody = $streamErrorDetails.responseBody
+                    scriptStackTrace = $streamErrorDetails.scriptStackTrace
+                    position = [string]$_.InvocationInfo.PositionMessage
                 }
 
                 try {
@@ -2140,6 +3604,7 @@ function Handle-Request {
                 authenticated = -not [string]::IsNullOrWhiteSpace($script:accessToken)
                 taskConcurrency = $script:taskConcurrency
                 autoRefreshSeconds = $script:autoRefreshSeconds
+                updateRetentionHours = $script:updateRetentionHours
                 implementedActivities = @("chiamate", "problemi", "cambiamenti")
                 time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
             })
@@ -2273,6 +3738,7 @@ $script:scope = Get-EnvValue -EnvVars $envVars -Key "SCOPE" -Default "email user
 $script:pageSize = Get-OptionalInt -EnvVars $envVars -Key "PAGE_SIZE" -Default 100 -Minimum 1 -Maximum 1000
 $script:taskConcurrency = Get-OptionalInt -EnvVars $envVars -Key "TASK_CONCURRENCY" -Default 6 -Minimum 1 -Maximum 20
 $script:autoRefreshSeconds = Get-OptionalInt -EnvVars $envVars -Key "AUTO_REFRESH_SECONDS" -Default 60 -Minimum 10 -Maximum 3600
+$script:updateRetentionHours = Get-OptionalInt -EnvVars $envVars -Key "UPDATE_RETENTION_HOURS" -Default 24 -Minimum 1 -Maximum 720
 $script:hostPrefix = Resolve-LocalHostPrefix -EnvVars $envVars
 
 Write-Log -Level INFO -Message "Configurazione caricata" -Data @{
@@ -2284,11 +3750,16 @@ Write-Log -Level INFO -Message "Configurazione caricata" -Data @{
     pageSize = $script:pageSize
     taskConcurrency = $script:taskConcurrency
     autoRefreshSeconds = $script:autoRefreshSeconds
+    updateRetentionHours = $script:updateRetentionHours
     host = $script:hostPrefix
     logLevel = $script:logLevel
 }
 
 Initialize-NotesDatabase
+[void](Invoke-WithUpdatesLock {
+    [void](Read-UpdatesDatabaseUnlocked)
+    [void](Read-UpdatesSnapshotUnlocked)
+})
 Initialize-DashboardSingleInstance
 Register-DashboardShutdownHandlers
 

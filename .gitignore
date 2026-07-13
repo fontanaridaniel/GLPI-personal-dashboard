@@ -1,4 +1,7 @@
 .env
 dashboard-server.pid.json
 *.log
+
 notes-db.json
+updates-db.json
+updates-snapshot.json

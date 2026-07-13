@@ -215,6 +215,206 @@
       font-weight: 800;
     }
 
+
+    .updates-card {
+      width: 100%;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+      overflow: hidden;
+    }
+
+    .updates-header {
+      min-height: 40px;
+      padding: 9px 14px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #fafafa;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .updates-title {
+      color: #6b7280;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .updates-count { font-variant-numeric: tabular-nums; }
+
+    .updates-actions {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .updates-progress {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: #9ca3af;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: normal;
+      text-transform: none;
+      white-space: nowrap;
+    }
+
+    .updates-progress[hidden] { display: none; }
+
+    .updates-progress svg {
+      display: block;
+      width: 14px;
+      height: 14px;
+      animation: spin 850ms linear infinite;
+    }
+
+    .updates-dismiss-all {
+      padding: 5px 8px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: #6b7280;
+      font: inherit;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .updates-dismiss-all:hover {
+      background: #f3f4f6;
+      color: #111827;
+    }
+
+    .updates-dismiss-all:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
+    .updates-list {
+      max-height: 250px;
+      overflow-y: auto;
+      padding: 6px 10px;
+    }
+
+    .update-row {
+      display: grid;
+      grid-template-columns: 30px minmax(0, 1fr) 28px;
+      align-items: start;
+      gap: 9px;
+      padding: 9px 4px;
+      border-bottom: 1px solid #f0f1f3;
+      border-radius: 10px;
+      transition: background-color 180ms ease, color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+    }
+
+    .update-row:last-child { border-bottom: 0; }
+
+    .update-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 9px;
+      background: #f3f4f6;
+      color: #4b5563;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 0;
+    }
+
+    .update-icon svg { width: 16px; height: 16px; }
+
+    .update-main { min-width: 0; }
+
+    .update-link {
+      display: block;
+      overflow: hidden;
+      color: #111827;
+      font-size: 13px;
+      font-weight: 800;
+      text-decoration: none;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .update-link:hover { text-decoration: underline; }
+
+    .update-meta {
+      margin-top: 3px;
+      color: #6b7280;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .update-kind {
+      margin-right: 6px;
+      color: #9ca3af;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .update-dismiss {
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: #9ca3af;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 19px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .update-dismiss:hover {
+      background: #f3f4f6;
+      color: #111827;
+    }
+
+    .update-row.pulse {
+      animation: update-row-pulse 2.4s ease-in-out;
+    }
+
+    .update-row.pulse .update-link,
+    .update-row.pulse .update-meta,
+    .update-row.pulse .update-kind,
+    .update-row.pulse .update-dismiss,
+    .update-row.pulse .update-icon {
+      animation: update-row-text-pulse 2.4s ease-in-out;
+    }
+
+    @keyframes update-row-pulse {
+      0%, 24%, 50%, 100% {
+        background: transparent;
+        color: inherit;
+        transform: translateY(0) scale(1);
+        box-shadow: none;
+      }
+      12%, 38%, 64% {
+        background: #111827;
+        color: #ffffff;
+        transform: translateY(-2px) scale(1.004);
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.22);
+      }
+    }
+
+    @keyframes update-row-text-pulse {
+      0%, 24%, 50%, 100% { color: inherit; }
+      12%, 38%, 64% { color: #ffffff; }
+    }
+
     .activities {
       width: 100%;
       flex: 1;
@@ -473,6 +673,28 @@
         </a>
       </section>
 
+      <section class="updates-card" aria-label="Aggiornamenti recenti">
+        <div class="updates-header">
+          <div class="updates-title">
+            Aggiornamenti recenti - <span class="updates-count" id="updates-count">0</span>
+          </div>
+          <div class="updates-actions">
+            <span class="updates-progress" id="progress-updates" aria-live="polite" hidden>
+              <span>Aggiornamento</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.45 5.1a1 1 0 1 0-1.86.74A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L14 10h6V4z"/>
+              </svg>
+            </span>
+            <button class="updates-dismiss-all" id="dismiss-all-updates" type="button" disabled>
+              Rimuovi tutti
+            </button>
+          </div>
+        </div>
+        <div class="updates-list" id="updates-list">
+          <div class="empty">Nessun aggiornamento recente</div>
+        </div>
+      </section>
+
       <section class="activities" aria-label="Attività">
         <article class="activity-card">
           <div class="activity-title">
@@ -535,8 +757,8 @@
       : 60;
     const REFRESH_MS = REFRESH_SECONDS * 1000;
     const CATEGORIES = ["chiamate", "problemi", "cambiamenti"];
-    const CACHE_KEY = "personal-glpi-dashboard-cache-v4";
-    const CACHE_VERSION = 4;
+    const CACHE_KEY = "personal-glpi-dashboard-cache-v5";
+    const CACHE_VERSION = 5;
 
     let nextRefreshAt = Date.now() + REFRESH_MS;
     let refreshTimer = null;
@@ -571,6 +793,11 @@
         lists: {},
         listUpdatedAt: {},
         categoryUpdatedAt: {},
+        updates: {
+          items: [],
+          count: 0,
+          generatedAt: null
+        },
         aggiornatoAlle: null,
         lastFullRefreshAt: 0
       };
@@ -768,8 +995,19 @@
       if (progress) progress.hidden = true;
     }
 
+    function showUpdatesProgress() {
+      const progress = document.getElementById("progress-updates");
+      if (progress) progress.hidden = false;
+    }
+
+    function hideUpdatesProgress() {
+      const progress = document.getElementById("progress-updates");
+      if (progress) progress.hidden = true;
+    }
+
     function hideAllProgress() {
       CATEGORIES.forEach(hideProgress);
+      hideUpdatesProgress();
     }
 
     function pulseElement(element) {
@@ -967,9 +1205,202 @@
       previous.taskIdsByParent[category] = nextTaskIdsByParent;
     }
 
+    function getUpdateKindLabel(kind) {
+      const normalized = String(kind || "").toLowerCase();
+      if (normalized === "ticket") return "Ticket";
+      if (normalized === "problem") return "Problema";
+      if (normalized === "change") return "Cambiamento";
+      return "Elemento";
+    }
+
+    function formatRelativeTime(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "adesso";
+
+      const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+      if (seconds < 45) return "adesso";
+
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return minutes === 1 ? "1 minuto fa" : minutes + " minuti fa";
+
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return hours === 1 ? "1 ora fa" : hours + " ore fa";
+
+      const days = Math.floor(hours / 24);
+      return days === 1 ? "1 giorno fa" : days + " giorni fa";
+    }
+
+    function createUpdateIcon(event) {
+      const wrapper = document.createElement("span");
+      wrapper.className = "update-icon";
+      wrapper.setAttribute("aria-hidden", "true");
+
+      const types = Array.isArray(event?.eventTypes)
+        ? event.eventTypes
+        : [event?.eventType].filter(Boolean);
+
+      let path = '<path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/>';
+
+      if (types.includes("item_created")) {
+        path = '<path d="M12 5v14M5 12h14"/><circle cx="12" cy="12" r="9"/>';
+      } else if (types.includes("status_changed")) {
+        path = '<path d="M7 7h10M7 12h7M7 17h4"/><path d="m15 15 2 2 3-4"/>';
+      } else if (types.includes("assignment_changed")) {
+        path = '<circle cx="9" cy="8" r="3"/><path d="M3.5 19c.7-3.2 2.5-5 5.5-5s4.8 1.8 5.5 5"/><path d="M16 8h5M18.5 5.5V10.5"/>';
+      } else if (types.includes("task_added") || types.includes("task_changed")) {
+        path = '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.2 1.2L7 4.8M3.5 12l1.2 1.2L7 10.8M3.5 18l1.2 1.2L7 16.8"/>';
+      } else if (types.includes("comment_added")) {
+        path = '<path d="M5 5h14v10H9l-4 4z"/><path d="M8 9h8M8 12h5"/>';
+      }
+
+      wrapper.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          ${path}
+        </svg>
+      `;
+
+      return wrapper;
+    }
+
+    function normalizeUpdatesData(data) {
+      const items = Array.isArray(data?.items)
+        ? [...data.items].sort(function (left, right) {
+            const leftTime = Date.parse(left?.detectedAt || "") || 0;
+            const rightTime = Date.parse(right?.detectedAt || "") || 0;
+            return rightTime - leftTime;
+          })
+        : [];
+      return {
+        items,
+        count: Number.isFinite(Number(data?.count)) ? Number(data.count) : items.length,
+        generatedAt: data?.generatedAt || new Date().toISOString()
+      };
+    }
+
+    function renderUpdates(data, newEventIds = []) {
+      const normalized = normalizeUpdatesData(data);
+      const list = document.getElementById("updates-list");
+      const count = document.getElementById("updates-count");
+      const dismissAll = document.getElementById("dismiss-all-updates");
+      const newIds = new Set(Array.isArray(newEventIds) ? newEventIds.map(String) : []);
+
+      count.textContent = String(normalized.count);
+      dismissAll.disabled = normalized.items.length === 0;
+      list.innerHTML = "";
+
+      if (normalized.items.length === 0) {
+        list.innerHTML = '<div class="empty">Nessun aggiornamento recente</div>';
+        return;
+      }
+
+      for (const event of normalized.items) {
+        const row = document.createElement("div");
+        row.className = "update-row";
+        row.dataset.eventId = String(event.eventId || "");
+
+        row.appendChild(createUpdateIcon(event));
+
+        const main = document.createElement("div");
+        main.className = "update-main";
+
+        const link = document.createElement("a");
+        link.className = "update-link";
+        link.href = event.url || "#";
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = "#" + event.itemId + " - " + (event.title || "(senza titolo)");
+
+        const meta = document.createElement("div");
+        meta.className = "update-meta";
+
+        const kind = document.createElement("span");
+        kind.className = "update-kind";
+        kind.textContent = getUpdateKindLabel(event.kind);
+
+        const details = document.createElement("span");
+        details.textContent = (event.details || event.label || "Elemento aggiornato") + " · " + formatRelativeTime(event.detectedAt);
+
+        meta.appendChild(kind);
+        meta.appendChild(details);
+        main.appendChild(link);
+        main.appendChild(meta);
+        row.appendChild(main);
+
+        const dismiss = document.createElement("button");
+        dismiss.className = "update-dismiss";
+        dismiss.type = "button";
+        dismiss.title = "Rimuovi aggiornamento";
+        dismiss.setAttribute("aria-label", "Rimuovi aggiornamento");
+        dismiss.textContent = "×";
+        dismiss.addEventListener("click", function () {
+          dismissUpdate(String(event.eventId || ""), dismiss);
+        });
+
+        row.appendChild(dismiss);
+        list.appendChild(row);
+
+        if (newIds.has(String(event.eventId || ""))) {
+          pulseElement(row);
+        }
+      }
+    }
+
+    async function postUpdateAction(path, payload) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify(payload || {}),
+        cache: "no-store"
+      });
+
+      if (!response.ok) {
+        const details = await readErrorDetails(response);
+        throw new Error(details?.message || details?.error || ("HTTP " + response.status));
+      }
+
+      return await response.json();
+    }
+
+    async function dismissUpdate(eventId, button) {
+      if (!eventId) return;
+      button.disabled = true;
+
+      try {
+        const data = await postUpdateAction("/api/updates/dismiss", { eventId });
+        dashboardCache.updates = normalizeUpdatesData(data);
+        saveCache();
+        renderUpdates(dashboardCache.updates);
+      } catch (error) {
+        button.disabled = false;
+        console.error("Errore rimozione aggiornamento", error);
+        setStatus("Errore rimozione aggiornamento: " + error.message, "error");
+      }
+    }
+
+    async function dismissAllUpdates() {
+      const button = document.getElementById("dismiss-all-updates");
+      if (button.disabled) return;
+      button.disabled = true;
+
+      try {
+        const data = await postUpdateAction("/api/updates/dismiss-all", {});
+        dashboardCache.updates = normalizeUpdatesData(data);
+        saveCache();
+        renderUpdates(dashboardCache.updates);
+      } catch (error) {
+        button.disabled = false;
+        console.error("Errore rimozione aggiornamenti", error);
+        setStatus("Errore rimozione aggiornamenti: " + error.message, "error");
+      }
+    }
+
     function applyCachedDashboard() {
       if (dashboardCache.stats) applyStats(dashboardCache.stats);
       setActivityTotals(dashboardCache.totals);
+      renderUpdates(dashboardCache.updates || { items: [], count: 0 });
 
       const tasks = dashboardCache.tasks || {};
       for (const category of CATEGORIES) {
@@ -1000,6 +1431,11 @@
       }
 
       mergeListViews(data.lists, Date.now());
+
+      if (data.updates) {
+        dashboardCache.updates = normalizeUpdatesData(data.updates);
+        renderUpdates(dashboardCache.updates);
+      }
 
       dashboardCache.aggiornatoAlle = data.aggiornatoAlle || nowText();
       dashboardCache.lastFullRefreshAt = Date.now();
@@ -1056,6 +1492,23 @@
         const event = JSON.parse(trimmed);
 
         if (event.type === "refreshStart") {
+          showUpdatesProgress();
+          return;
+        }
+
+        if (event.type === "summary") {
+          if (event.stats) {
+            dashboardCache.stats = event.stats;
+            applyStats(event.stats);
+          }
+
+          if (event.totals) {
+            dashboardCache.totals = event.totals;
+            setActivityTotals(event.totals);
+          }
+
+          mergeListViews(event.lists, Date.now());
+          saveCache();
           return;
         }
 
@@ -1089,6 +1542,14 @@
 
           renderActivityTasks(event.category, items);
           hideProgress(event.category);
+          saveCache();
+          return;
+        }
+
+        if (event.type === "updates") {
+          dashboardCache.updates = normalizeUpdatesData(event);
+          renderUpdates(dashboardCache.updates, event.newEventIds || []);
+          hideUpdatesProgress();
           saveCache();
           return;
         }
@@ -1132,6 +1593,7 @@
 
       isRefreshing = true;
       setRefreshButtonLoading(true);
+      showUpdatesProgress();
 
       try {
         setStatus("Aggiornamento in corso...", "info");
@@ -1191,6 +1653,7 @@
     }
 
     document.getElementById("force-refresh").addEventListener("click", forceRefresh);
+    document.getElementById("dismiss-all-updates").addEventListener("click", dismissAllUpdates);
     window.setInterval(updateCountdown, 500);
 
     window.addEventListener("pageshow", function (event) {
