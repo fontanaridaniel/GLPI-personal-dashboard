@@ -8,9 +8,17 @@ $envPath = Join-Path $scriptDir ".env"
 $dashboardPath = Join-Path $scriptDir "dashboard.html"
 $listPath = Join-Path $scriptDir "list.html"
 $pidPath = Join-Path $scriptDir "dashboard-server.pid.json"
-$notesDbPath = Join-Path $scriptDir "notes-db.json"
-$updatesDbPath = Join-Path $scriptDir "updates-db.json"
-$updatesSnapshotPath = Join-Path $scriptDir "updates-snapshot.json"
+
+# Legacy locations used by previous versions. Existing files are migrated
+# automatically to the configured database paths when the server starts.
+$script:legacyNotesDbPath = Join-Path $scriptDir "notes-db.json"
+$script:legacyUpdatesDbPath = Join-Path $scriptDir "updates-db.json"
+$script:legacyUpdatesSnapshotPath = Join-Path $scriptDir "updates-snapshot.json"
+
+# Resolved after loading .env. Relative paths are based on the script folder.
+$script:notesDbPath = $null
+$script:updatesDbPath = $null
+$script:updatesSnapshotPath = $null
 
 $ticketResourcePath = "Assistance/Ticket"
 $problemResourcePath = "Assistance/Problem"
@@ -232,6 +240,172 @@ function Get-OptionalInt {
     }
 
     return $parsed
+}
+
+function Ensure-ParentDirectory {
+    param ([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw "Percorso database non valido."
+    }
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $parentDirectory = [System.IO.Path]::GetDirectoryName($fullPath)
+
+    if ([string]::IsNullOrWhiteSpace($parentDirectory)) {
+        throw "Cartella database non valida per il percorso: $Path"
+    }
+
+    if (-not [System.IO.Directory]::Exists($parentDirectory)) {
+        [void][System.IO.Directory]::CreateDirectory($parentDirectory)
+    }
+}
+
+function Resolve-ConfiguredDatabasePath {
+    param (
+        [hashtable]$EnvVars,
+        [string]$Key,
+        [string]$DefaultRelativePath
+    )
+
+    $configuredValue = Get-EnvValue `
+        -EnvVars $EnvVars `
+        -Key $Key `
+        -Default $DefaultRelativePath
+
+    $expandedValue = [Environment]::ExpandEnvironmentVariables(
+        ($configuredValue + "").Trim()
+    )
+
+    if ([string]::IsNullOrWhiteSpace($expandedValue)) {
+        Write-Log -Level ERROR -Message "$Key non può essere vuoto"
+        exit 1
+    }
+
+    try {
+        $resolvedPath = if ([System.IO.Path]::IsPathRooted($expandedValue)) {
+            [System.IO.Path]::GetFullPath($expandedValue)
+        }
+        else {
+            [System.IO.Path]::GetFullPath((Join-Path $scriptDir $expandedValue))
+        }
+
+        $fileName = [System.IO.Path]::GetFileName($resolvedPath)
+        if ([string]::IsNullOrWhiteSpace($fileName)) {
+            throw "Il percorso deve includere anche il nome del file JSON."
+        }
+
+        Ensure-ParentDirectory -Path $resolvedPath
+        return $resolvedPath
+    }
+    catch {
+        Write-Log -Level ERROR -Message "Percorso database non valido" -Data @{
+            key = $Key
+            configuredValue = $configuredValue
+            error = $_.Exception.Message
+        }
+        exit 1
+    }
+}
+
+function Move-LegacyDatabaseFile {
+    param (
+        [string]$LegacyPath,
+        [string]$TargetPath,
+        [string]$Label
+    )
+
+    if ([string]::IsNullOrWhiteSpace($LegacyPath) -or [string]::IsNullOrWhiteSpace($TargetPath)) {
+        return
+    }
+
+    $legacyFullPath = [System.IO.Path]::GetFullPath($LegacyPath)
+    $targetFullPath = [System.IO.Path]::GetFullPath($TargetPath)
+
+    if ([string]::Equals($legacyFullPath, $targetFullPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return
+    }
+
+    if ((Test-Path $targetFullPath) -or -not (Test-Path $legacyFullPath)) {
+        return
+    }
+
+    Ensure-ParentDirectory -Path $targetFullPath
+
+    try {
+        Move-Item -Path $legacyFullPath -Destination $targetFullPath -Force -ErrorAction Stop
+    }
+    catch {
+        try {
+            Copy-Item -Path $legacyFullPath -Destination $targetFullPath -Force -ErrorAction Stop
+            Remove-Item -Path $legacyFullPath -Force -ErrorAction Stop
+        }
+        catch {
+            Write-Log -Level ERROR -Message "Impossibile spostare il database precedente" -Data @{
+                database = $Label
+                source = $legacyFullPath
+                destination = $targetFullPath
+                error = $_.Exception.Message
+            }
+            throw
+        }
+    }
+
+    Write-Log -Level INFO -Message "Database precedente spostato nella nuova posizione" -Data @{
+        database = $Label
+        source = $legacyFullPath
+        destination = $targetFullPath
+    }
+}
+
+function Initialize-DatabaseStorage {
+    param ([hashtable]$EnvVars)
+
+    $script:notesDbPath = Resolve-ConfiguredDatabasePath `
+        -EnvVars $EnvVars `
+        -Key "NOTES_DB_PATH" `
+        -DefaultRelativePath "db/notes-db.json"
+
+    $script:updatesDbPath = Resolve-ConfiguredDatabasePath `
+        -EnvVars $EnvVars `
+        -Key "UPDATES_DB_PATH" `
+        -DefaultRelativePath "db/updates-db.json"
+
+    $script:updatesSnapshotPath = Resolve-ConfiguredDatabasePath `
+        -EnvVars $EnvVars `
+        -Key "UPDATES_SNAPSHOT_PATH" `
+        -DefaultRelativePath "db/updates-snapshot.json"
+
+    $resolvedPaths = @(
+        $script:notesDbPath,
+        $script:updatesDbPath,
+        $script:updatesSnapshotPath
+    )
+
+    $uniquePaths = @($resolvedPaths | Select-Object -Unique)
+    if ($uniquePaths.Count -ne $resolvedPaths.Count) {
+        Write-Log -Level ERROR -Message "Ogni database deve avere un percorso file diverso" -Data @{
+            notesDbPath = $script:notesDbPath
+            updatesDbPath = $script:updatesDbPath
+            updatesSnapshotPath = $script:updatesSnapshotPath
+        }
+        exit 1
+    }
+
+    Move-LegacyDatabaseFile `
+        -LegacyPath $script:legacyNotesDbPath `
+        -TargetPath $script:notesDbPath `
+        -Label "note"
+
+    Move-LegacyDatabaseFile `
+        -LegacyPath $script:legacyUpdatesDbPath `
+        -TargetPath $script:updatesDbPath `
+        -Label "aggiornamenti"
+
+    Move-LegacyDatabaseFile `
+        -LegacyPath $script:legacyUpdatesSnapshotPath `
+        -TargetPath $script:updatesSnapshotPath `
+        -Label "snapshot aggiornamenti"
 }
 
 function Normalize-GlpiWebBaseUrl {
@@ -2046,19 +2220,20 @@ function New-EmptyNotesDatabase {
 }
 
 function Initialize-NotesDatabase {
-    if (Test-Path $notesDbPath) { return }
+    Ensure-ParentDirectory -Path $script:notesDbPath
+    if (Test-Path $script:notesDbPath) { return }
 
     $database = New-EmptyNotesDatabase
     $json = $database | ConvertTo-Json -Depth 20
     $utf8NoBom = [System.Text.UTF8Encoding]::new($false, $true)
-    [System.IO.File]::WriteAllText($notesDbPath, $json, $utf8NoBom)
+    [System.IO.File]::WriteAllText($script:notesDbPath, $json, $utf8NoBom)
 }
 
 function Read-NotesDatabaseUnlocked {
     Initialize-NotesDatabase
 
     try {
-        $raw = [System.IO.File]::ReadAllText($notesDbPath, [System.Text.UTF8Encoding]::new($false, $true))
+        $raw = [System.IO.File]::ReadAllText($script:notesDbPath, [System.Text.UTF8Encoding]::new($false, $true))
         if ([string]::IsNullOrWhiteSpace($raw)) {
             return New-EmptyNotesDatabase
         }
@@ -2075,7 +2250,7 @@ function Read-NotesDatabaseUnlocked {
     }
     catch {
         Write-Log -Level ERROR -Message "Database note non leggibile" -Data @{
-            path = $notesDbPath
+            path = $script:notesDbPath
             message = $_.Exception.Message
         }
         throw "Impossibile leggere il database delle note."
@@ -2085,13 +2260,14 @@ function Read-NotesDatabaseUnlocked {
 function Save-NotesDatabaseUnlocked {
     param ($Database)
 
-    $temporaryPath = "$notesDbPath.tmp"
+    Ensure-ParentDirectory -Path $script:notesDbPath
+    $temporaryPath = "$($script:notesDbPath).tmp"
     $json = $Database | ConvertTo-Json -Depth 30
     $utf8NoBom = [System.Text.UTF8Encoding]::new($false, $true)
 
     try {
         [System.IO.File]::WriteAllText($temporaryPath, $json, $utf8NoBom)
-        Move-Item -Path $temporaryPath -Destination $notesDbPath -Force
+        Move-Item -Path $temporaryPath -Destination $script:notesDbPath -Force
     }
     finally {
         if (Test-Path $temporaryPath) {
@@ -2387,6 +2563,7 @@ function Write-JsonFileAtomic {
         $Value
     )
 
+    Ensure-ParentDirectory -Path $Path
     $temporaryPath = "$Path.tmp"
     $json = $Value | ConvertTo-Json -Depth 80
     $utf8NoBom = [System.Text.UTF8Encoding]::new($false, $true)
@@ -2435,14 +2612,14 @@ function Move-BrokenJsonFile {
 }
 
 function Read-UpdatesDatabaseUnlocked {
-    if (-not (Test-Path $updatesDbPath)) {
+    if (-not (Test-Path $script:updatesDbPath)) {
         $empty = New-EmptyUpdatesDatabase
-        Write-JsonFileAtomic -Path $updatesDbPath -Value $empty
+        Write-JsonFileAtomic -Path $script:updatesDbPath -Value $empty
         return $empty
     }
 
     try {
-        $raw = [System.IO.File]::ReadAllText($updatesDbPath, [System.Text.UTF8Encoding]::new($false, $true))
+        $raw = [System.IO.File]::ReadAllText($script:updatesDbPath, [System.Text.UTF8Encoding]::new($false, $true))
         if ([string]::IsNullOrWhiteSpace($raw)) { throw "File vuoto" }
 
         $database = $raw | ConvertFrom-Json
@@ -2455,26 +2632,26 @@ function Read-UpdatesDatabaseUnlocked {
         return $database
     }
     catch {
-        $brokenPath = Move-BrokenJsonFile -Path $updatesDbPath
+        $brokenPath = Move-BrokenJsonFile -Path $script:updatesDbPath
         Write-Log -Level WARN -Message "Database aggiornamenti corrotto: creato un nuovo database" -Data @{
-            path = $updatesDbPath
+            path = $script:updatesDbPath
             brokenPath = $brokenPath
             error = $_.Exception.Message
         }
 
         $empty = New-EmptyUpdatesDatabase
-        Write-JsonFileAtomic -Path $updatesDbPath -Value $empty
+        Write-JsonFileAtomic -Path $script:updatesDbPath -Value $empty
         return $empty
     }
 }
 
 function Read-UpdatesSnapshotUnlocked {
-    if (-not (Test-Path $updatesSnapshotPath)) {
+    if (-not (Test-Path $script:updatesSnapshotPath)) {
         return New-EmptyUpdatesSnapshot
     }
 
     try {
-        $raw = [System.IO.File]::ReadAllText($updatesSnapshotPath, [System.Text.UTF8Encoding]::new($false, $true))
+        $raw = [System.IO.File]::ReadAllText($script:updatesSnapshotPath, [System.Text.UTF8Encoding]::new($false, $true))
         if ([string]::IsNullOrWhiteSpace($raw)) { throw "File vuoto" }
 
         $snapshot = $raw | ConvertFrom-Json
@@ -2487,9 +2664,9 @@ function Read-UpdatesSnapshotUnlocked {
         return $snapshot
     }
     catch {
-        $brokenPath = Move-BrokenJsonFile -Path $updatesSnapshotPath
+        $brokenPath = Move-BrokenJsonFile -Path $script:updatesSnapshotPath
         Write-Log -Level WARN -Message "Snapshot aggiornamenti corrotto: verrà ricreato" -Data @{
-            path = $updatesSnapshotPath
+            path = $script:updatesSnapshotPath
             brokenPath = $brokenPath
             error = $_.Exception.Message
         }
@@ -3044,7 +3221,7 @@ function Dismiss-RecentUpdate {
         }
 
         if (-not $found) { throw "Aggiornamento non trovato." }
-        Write-JsonFileAtomic -Path $updatesDbPath -Value $database
+        Write-JsonFileAtomic -Path $script:updatesDbPath -Value $database
         return (Get-RecentUpdates)
     }
 }
@@ -3057,7 +3234,7 @@ function Dismiss-AllRecentUpdates {
             $event.dismissed = $true
         }
 
-        Write-JsonFileAtomic -Path $updatesDbPath -Value $database
+        Write-JsonFileAtomic -Path $script:updatesDbPath -Value $database
         $snapshot = Read-UpdatesSnapshotUnlocked
         $items = @(Get-VisibleUpdatesUnlocked -Database $database -Snapshot $snapshot)
 
@@ -3384,8 +3561,8 @@ function Update-RecentUpdatesState {
             items = [PSCustomObject]$newItems
         }
 
-        Write-JsonFileAtomic -Path $updatesDbPath -Value $database
-        Write-JsonFileAtomic -Path $updatesSnapshotPath -Value $newSnapshot
+        Write-JsonFileAtomic -Path $script:updatesDbPath -Value $database
+        Write-JsonFileAtomic -Path $script:updatesSnapshotPath -Value $newSnapshot
 
         $visibleItems = @(Get-VisibleUpdatesUnlocked -Database $database -Snapshot $newSnapshot)
         $visibleIdSet = @{}
@@ -3821,6 +3998,7 @@ $script:pageSize = Get-OptionalInt -EnvVars $envVars -Key "PAGE_SIZE" -Default 1
 $script:taskConcurrency = Get-OptionalInt -EnvVars $envVars -Key "TASK_CONCURRENCY" -Default 6 -Minimum 1 -Maximum 20
 $script:autoRefreshSeconds = Get-OptionalInt -EnvVars $envVars -Key "AUTO_REFRESH_SECONDS" -Default 60 -Minimum 10 -Maximum 3600
 $script:updateRetentionHours = Get-OptionalInt -EnvVars $envVars -Key "UPDATE_RETENTION_HOURS" -Default 24 -Minimum 1 -Maximum 720
+Initialize-DatabaseStorage -EnvVars $envVars
 $script:hostPrefix = Resolve-LocalHostPrefix -EnvVars $envVars
 
 Write-Log -Level INFO -Message "Configurazione caricata" -Data @{
@@ -3833,6 +4011,11 @@ Write-Log -Level INFO -Message "Configurazione caricata" -Data @{
     taskConcurrency = $script:taskConcurrency
     autoRefreshSeconds = $script:autoRefreshSeconds
     updateRetentionHours = $script:updateRetentionHours
+    databasePaths = @{
+        notes = $script:notesDbPath
+        updates = $script:updatesDbPath
+        updatesSnapshot = $script:updatesSnapshotPath
+    }
     host = $script:hostPrefix
     logLevel = $script:logLevel
 }
