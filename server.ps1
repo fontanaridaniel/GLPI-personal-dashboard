@@ -1597,14 +1597,15 @@ function Initialize-NotesDatabase {
 
     $database = New-EmptyNotesDatabase
     $json = $database | ConvertTo-Json -Depth 20
-    Set-Content -Path $notesDbPath -Value $json -Encoding UTF8 -Force
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($notesDbPath, $json, $utf8NoBom)
 }
 
 function Read-NotesDatabaseUnlocked {
     Initialize-NotesDatabase
 
     try {
-        $raw = Get-Content -Path $notesDbPath -Raw -Encoding UTF8
+        $raw = [System.IO.File]::ReadAllText($notesDbPath, [System.Text.Encoding]::UTF8)
         if ([string]::IsNullOrWhiteSpace($raw)) {
             return New-EmptyNotesDatabase
         }
@@ -1633,9 +1634,10 @@ function Save-NotesDatabaseUnlocked {
 
     $temporaryPath = "$notesDbPath.tmp"
     $json = $Database | ConvertTo-Json -Depth 30
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
     try {
-        Set-Content -Path $temporaryPath -Value $json -Encoding UTF8 -Force
+        [System.IO.File]::WriteAllText($temporaryPath, $json, $utf8NoBom)
         Move-Item -Path $temporaryPath -Destination $notesDbPath -Force
     }
     finally {
@@ -1897,8 +1899,10 @@ function Read-JsonRequestBody {
     if (-not $Request.HasEntityBody) { return [PSCustomObject]@{} }
     if ($Request.ContentLength64 -gt 1048576) { throw "Corpo richiesta troppo grande." }
 
-    $encoding = if ($Request.ContentEncoding) { $Request.ContentEncoding } else { [System.Text.Encoding]::UTF8 }
-    $reader = [System.IO.StreamReader]::new($Request.InputStream, $encoding)
+    # JSON sent by fetch is UTF-8. HttpListener may otherwise fall back to the
+    # Windows ANSI code page when the charset is omitted, turning "è" into "Ã¨".
+    $utf8 = [System.Text.UTF8Encoding]::new($false, $true)
+    $reader = [System.IO.StreamReader]::new($Request.InputStream, $utf8, $true, 4096, $false)
 
     try {
         $raw = $reader.ReadToEnd()
