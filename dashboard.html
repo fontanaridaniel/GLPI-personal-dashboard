@@ -390,9 +390,12 @@
     .update-row.pulse .update-link,
     .update-row.pulse .update-meta,
     .update-row.pulse .update-kind,
-    .update-row.pulse .update-dismiss,
-    .update-row.pulse .update-icon {
+    .update-row.pulse .update-dismiss {
       animation: update-row-text-pulse 2.4s ease-in-out;
+    }
+
+    .update-row.pulse .update-icon {
+      animation: update-row-icon-pulse 2.4s ease-in-out;
     }
 
     @keyframes update-row-pulse {
@@ -413,6 +416,17 @@
     @keyframes update-row-text-pulse {
       0%, 24%, 50%, 100% { color: inherit; }
       12%, 38%, 64% { color: #ffffff; }
+    }
+
+    @keyframes update-row-icon-pulse {
+      0%, 24%, 50%, 100% {
+        background: #f3f4f6;
+        color: #4b5563;
+      }
+      12%, 38%, 64% {
+        background: #374151;
+        color: #ffffff;
+      }
     }
 
     .activities {
@@ -1418,7 +1432,7 @@
       );
     }
 
-    function absorbFullDashboard(data) {
+    function absorbFullDashboard(data, options = {}) {
       if (!data || typeof data !== "object") return;
 
       if (data.stats) dashboardCache.stats = data.stats;
@@ -1434,7 +1448,10 @@
 
       if (data.updates) {
         dashboardCache.updates = normalizeUpdatesData(data.updates);
-        renderUpdates(dashboardCache.updates);
+
+        if (options.renderUpdates !== false) {
+          renderUpdates(dashboardCache.updates);
+        }
       }
 
       dashboardCache.aggiornatoAlle = data.aggiornatoAlle || nowText();
@@ -1484,6 +1501,7 @@
       const decoder = new TextDecoder("utf-8");
       let buffer = "";
       let finalResult = null;
+      let updatesRenderedFromStream = false;
 
       function processLine(line) {
         const trimmed = line.trim();
@@ -1549,6 +1567,7 @@
         if (event.type === "updates") {
           dashboardCache.updates = normalizeUpdatesData(event);
           renderUpdates(dashboardCache.updates, event.newEventIds || []);
+          updatesRenderedFromStream = true;
           hideUpdatesProgress();
           saveCache();
           return;
@@ -1584,7 +1603,11 @@
         throw new Error("La risposta non contiene il risultato finale");
       }
 
-      absorbFullDashboard(finalResult);
+      // When the stream already rendered newEventIds, preserve those exact
+      // DOM rows so their individual blink animation can finish smoothly.
+      absorbFullDashboard(finalResult, {
+        renderUpdates: !updatesRenderedFromStream
+      });
       return finalResult;
     }
 

@@ -2050,7 +2050,7 @@ function Initialize-NotesDatabase {
 
     $database = New-EmptyNotesDatabase
     $json = $database | ConvertTo-Json -Depth 20
-    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false, $true)
     [System.IO.File]::WriteAllText($notesDbPath, $json, $utf8NoBom)
 }
 
@@ -2058,7 +2058,7 @@ function Read-NotesDatabaseUnlocked {
     Initialize-NotesDatabase
 
     try {
-        $raw = [System.IO.File]::ReadAllText($notesDbPath, [System.Text.Encoding]::UTF8)
+        $raw = [System.IO.File]::ReadAllText($notesDbPath, [System.Text.UTF8Encoding]::new($false, $true))
         if ([string]::IsNullOrWhiteSpace($raw)) {
             return New-EmptyNotesDatabase
         }
@@ -2087,7 +2087,7 @@ function Save-NotesDatabaseUnlocked {
 
     $temporaryPath = "$notesDbPath.tmp"
     $json = $Database | ConvertTo-Json -Depth 30
-    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false, $true)
 
     try {
         [System.IO.File]::WriteAllText($temporaryPath, $json, $utf8NoBom)
@@ -2389,7 +2389,7 @@ function Write-JsonFileAtomic {
 
     $temporaryPath = "$Path.tmp"
     $json = $Value | ConvertTo-Json -Depth 80
-    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false, $true)
 
     try {
         [System.IO.File]::WriteAllText($temporaryPath, $json, $utf8NoBom)
@@ -2442,7 +2442,7 @@ function Read-UpdatesDatabaseUnlocked {
     }
 
     try {
-        $raw = [System.IO.File]::ReadAllText($updatesDbPath, [System.Text.Encoding]::UTF8)
+        $raw = [System.IO.File]::ReadAllText($updatesDbPath, [System.Text.UTF8Encoding]::new($false, $true))
         if ([string]::IsNullOrWhiteSpace($raw)) { throw "File vuoto" }
 
         $database = $raw | ConvertFrom-Json
@@ -2474,7 +2474,7 @@ function Read-UpdatesSnapshotUnlocked {
     }
 
     try {
-        $raw = [System.IO.File]::ReadAllText($updatesSnapshotPath, [System.Text.Encoding]::UTF8)
+        $raw = [System.IO.File]::ReadAllText($updatesSnapshotPath, [System.Text.UTF8Encoding]::new($false, $true))
         if ([string]::IsNullOrWhiteSpace($raw)) { throw "File vuoto" }
 
         $snapshot = $raw | ConvertFrom-Json
@@ -2884,12 +2884,17 @@ function New-GroupedUpdateEvent {
         [array]$SignatureParts
     )
 
-    $detectedAt = (Get-Date).ToString("o")
+    $detectedAt = [datetime]::UtcNow.ToString("o")
     $signature = @($SignatureParts + @([string](Get-PropValue -Object $Current -Names @("dateMod")))) -join "|"
     $eventHash = Get-StableHash -Value ("{0}|{1}" -f $ItemKey, $signature)
 
+    # Every detected change gets its own event ID. Dismissing one notification
+    # therefore hides only that exact occurrence; a later update of the same
+    # type will always receive a different ID and remain visible.
+    $eventNonce = [guid]::NewGuid().ToString("N")
+
     return [PSCustomObject]@{
-        eventId = ("{0}:{1}" -f $ItemKey, $eventHash.Substring(0, 24))
+        eventId = ("{0}:{1}:{2}" -f $ItemKey, $eventHash.Substring(0, 12), $eventNonce.Substring(0, 12))
         itemKey = $ItemKey
         kind = [string](Get-PropValue -Object $Current -Names @("kind"))
         itemId = [int](Get-IdValue (Get-PropValue -Object $Current -Names @("id")))
@@ -2904,6 +2909,60 @@ function New-GroupedUpdateEvent {
     }
 }
 
+function Convert-ToVisibleUpdateEvent {
+    param ($Event)
+
+    if ($null -eq $Event) { return $null }
+
+    $eventTypes = @(
+        Convert-ToArray (Get-PropValue -Object $Event -Names @("eventTypes")) |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
+
+    if ($eventTypes.Count -eq 0) {
+        $singleType = [string](Get-PropValue -Object $Event -Names @("eventType"))
+        if (-not [string]::IsNullOrWhiteSpace($singleType)) {
+            $eventTypes = @($singleType)
+        }
+    }
+
+    # Existing databases may still contain status-change notifications created
+    # by previous versions. Hide status-only events and remove the status part
+    # from grouped events without modifying the original JSON record.
+    $visibleTypes = @($eventTypes | Where-Object { $_ -ne "status_changed" })
+    if ($visibleTypes.Count -eq 0) { return $null }
+
+    $originalDetails = [string](Get-PropValue -Object $Event -Names @("details"))
+    $detailParts = @(
+        $originalDetails -split '\s+·\s+' |
+            ForEach-Object { ($_.ToString()).Trim() } |
+            Where-Object {
+                -not [string]::IsNullOrWhiteSpace($_) -and
+                $_ -notmatch '(?i)^Cambio\s+stato\s*:'
+            }
+    )
+
+    $copy = [ordered]@{}
+    foreach ($property in $Event.PSObject.Properties) {
+        $copy[[string]$property.Name] = $property.Value
+    }
+
+    $copy["eventTypes"] = @($visibleTypes)
+    $copy["eventType"] = [string]$visibleTypes[0]
+
+    if ($detailParts.Count -gt 0) {
+        $copy["label"] = [string]$detailParts[0]
+        $copy["details"] = ($detailParts -join " · ")
+    }
+    elseif ([string](Get-PropValue -Object $Event -Names @("label")) -match '(?i)^Cambio\s+stato') {
+        $copy["label"] = "Elemento aggiornato"
+        $copy["details"] = "Elemento aggiornato"
+    }
+
+    return [PSCustomObject]$copy
+}
+
 function Get-VisibleUpdatesUnlocked {
     param (
         $Database,
@@ -2912,25 +2971,41 @@ function Get-VisibleUpdatesUnlocked {
 
     $cutoff = (Get-Date).AddHours(-1 * $script:updateRetentionHours)
     $currentItems = Convert-PropertyBagToHashtable (Get-PropValue -Object $Snapshot -Names @("items"))
+    $visibleItems = @()
+
+    foreach ($event in @(Convert-ToArray (Get-PropValue -Object $Database -Names @("events")))) {
+        $dismissed = [bool](Get-PropValue -Object $event -Names @("dismissed"))
+        if ($dismissed) { continue }
+
+        $detectedAt = [datetime]::MinValue
+        if (-not [datetime]::TryParse([string](Get-PropValue -Object $event -Names @("detectedAt")), [ref]$detectedAt)) {
+            continue
+        }
+        if ($detectedAt -lt $cutoff) { continue }
+
+        $itemKey = [string](Get-PropValue -Object $event -Names @("itemKey"))
+        if (-not $currentItems.ContainsKey($itemKey)) { continue }
+        if (-not [bool](Get-PropValue -Object $currentItems[$itemKey] -Names @("isRelevant"))) { continue }
+
+        $publicEvent = Convert-ToVisibleUpdateEvent -Event $event
+        if ($null -ne $publicEvent) {
+            $visibleItems += $publicEvent
+        }
+    }
 
     return @(
-        @(Convert-ToArray (Get-PropValue -Object $Database -Names @("events"))) |
-            Where-Object {
-                $dismissed = [bool](Get-PropValue -Object $_ -Names @("dismissed"))
-                if ($dismissed) { return $false }
-
-                $detectedAt = [datetime]::MinValue
-                if (-not [datetime]::TryParse([string](Get-PropValue -Object $_ -Names @("detectedAt")), [ref]$detectedAt)) {
-                    return $false
+        $visibleItems |
+            Sort-Object @{
+                Expression = {
+                    $parsedDate = [datetime]::MinValue
+                    [void][datetime]::TryParse(
+                        [string](Get-PropValue -Object $_ -Names @("detectedAt")),
+                        [ref]$parsedDate
+                    )
+                    $parsedDate
                 }
-                if ($detectedAt -lt $cutoff) { return $false }
-
-                $itemKey = [string](Get-PropValue -Object $_ -Names @("itemKey"))
-                if (-not $currentItems.ContainsKey($itemKey)) { return $false }
-
-                return [bool](Get-PropValue -Object $currentItems[$itemKey] -Names @("isRelevant"))
-            } |
-            Sort-Object @{ Expression = { [datetime](Get-PropValue -Object $_ -Names @("detectedAt")) }; Descending = $true }
+                Descending = $true
+            }
     )
 }
 
@@ -3164,13 +3239,10 @@ function Update-RecentUpdatesState {
                 $oldStatusId = Get-IdValue (Get-PropValue -Object $old -Names @("statusId"))
                 $newStatusId = Get-IdValue (Get-PropValue -Object $current -Names @("statusId"))
 
-                if ($oldStatusId -ne $newStatusId) {
-                    $oldStatusText = [string](Get-PropValue -Object $old -Names @("statusText"))
-                    $newStatusText = [string](Get-PropValue -Object $current -Names @("statusText"))
-                    $eventTypes.Add("status_changed")
-                    $descriptions.Add(("Cambio stato: {0} → {1}" -f $oldStatusText, $newStatusText))
-                    $signatureParts.Add(("status:{0}:{1}" -f $oldStatusId, $newStatusId))
-                }
+                # Status changes are intentionally tracked in the snapshot but
+                # do not generate a notification. Keep this flag so a pure
+                # status change does not fall back to "Elemento aggiornato".
+                $statusChanged = $oldStatusId -ne $newStatusId
 
                 $oldAssigned = @(Convert-ToArray (Get-PropValue -Object $old -Names @("assignedUserIds")))
                 $newAssigned = @(Convert-ToArray (Get-PropValue -Object $current -Names @("assignedUserIds")))
@@ -3232,7 +3304,7 @@ function Update-RecentUpdatesState {
                 $oldDateMod = [string](Get-PropValue -Object $old -Names @("dateMod"))
                 $newDateMod = [string](Get-PropValue -Object $current -Names @("dateMod"))
 
-                if ($oldDateMod -ne $newDateMod -and $eventTypes.Count -eq 0) {
+                if ($oldDateMod -ne $newDateMod -and $eventTypes.Count -eq 0 -and -not $statusChanged) {
                     $eventTypes.Add("item_updated")
                     $descriptions.Add("Elemento aggiornato")
                     $signatureParts.Add(("updated:{0}:{1}" -f $oldDateMod, $newDateMod))
@@ -3258,12 +3330,22 @@ function Update-RecentUpdatesState {
         $now = Get-Date
         $cutoff = $now.AddHours(-1 * $script:updateRetentionHours)
         $existingEvents = @(
-            @(Convert-ToArray (Get-PropValue -Object $database -Names @("events"))) |
-                Where-Object {
-                    $detected = [datetime]::MinValue
-                    [datetime]::TryParse([string](Get-PropValue -Object $_ -Names @("detectedAt")), [ref]$detected) -and
-                    $detected -ge $cutoff
+            foreach ($storedEvent in @(Convert-ToArray (Get-PropValue -Object $database -Names @("events")))) {
+                $detected = [datetime]::MinValue
+                $isValidDate = [datetime]::TryParse(
+                    [string](Get-PropValue -Object $storedEvent -Names @("detectedAt")),
+                    [ref]$detected
+                )
+
+                if (-not $isValidDate -or $detected -lt $cutoff) { continue }
+
+                # Also migrate old JSON data: status-only notifications are
+                # removed and status text is stripped from grouped events.
+                $cleanEvent = Convert-ToVisibleUpdateEvent -Event $storedEvent
+                if ($null -ne $cleanEvent) {
+                    $cleanEvent
                 }
+            }
         )
 
         $knownEventIds = @{}
