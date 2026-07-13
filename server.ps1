@@ -749,21 +749,77 @@ function Get-TicketTypeId {
     ))
 }
 
-function Get-ItemStatusText {
+function Get-ItemStatusId {
     param ($Item)
+
+    return Get-IdValue (
+        Get-PropValue $Item @("status", "status_id", "statuses_id")
+    )
+}
+
+function Get-ItemStatusText {
+    param (
+        $Item,
+        [string]$Kind = ""
+    )
 
     $status = Get-PropValue $Item @("status", "status_id", "statuses_id")
     $text = Get-TextValue $status
 
-    if ($text -and $text -notmatch "^\d+$") { return $text }
+    if ($text -and $text -notmatch "^\d+$") {
+        return $text
+    }
 
-    switch (Get-IdValue $status) {
-        1 { return "Nuovo" }
-        2 { return "Assegnato" }
-        3 { return "Pianificato" }
-        4 { return "In attesa" }
+    $statusId = Get-IdValue $status
+    $normalizedKind = ($Kind + "").Trim().ToLowerInvariant()
+
+    if ($normalizedKind -eq "ticket") {
+        switch ($statusId) {
+            1  { return "Nuova" }
+            10 { return "Convalida" }
+            2  { return "In lavorazione (assegnata)" }
+            3  { return "In lavorazione (pianificata)" }
+            4  { return "In sospeso" }
+            5  { return "Risolto" }
+            6  { return "Chiusa" }
+        }
+    }
+    elseif ($normalizedKind -eq "problem") {
+        switch ($statusId) {
+            1 { return "Nuova" }
+            7 { return "Accettato" }
+            2 { return "In lavorazione (assegnata)" }
+            3 { return "In lavorazione (pianificata)" }
+            4 { return "In sospeso" }
+            5 { return "Risolto" }
+            8 { return "Sotto osservazione" }
+            6 { return "Chiusa" }
+        }
+    }
+    elseif ($normalizedKind -eq "change") {
+        switch ($statusId) {
+            1  { return "Nuova" }
+            9  { return "Valutazione" }
+            10 { return "Convalida" }
+            7  { return "Accettato" }
+            4  { return "In sospeso" }
+            11 { return "Analisi" }
+            12 { return "Qualificazione" }
+            5  { return "Applicata" }
+            8  { return "Revisione" }
+            6  { return "Chiusa" }
+            14 { return "Cancellato" }
+            13 { return "Rifiutato" }
+        }
+    }
+
+    switch ($statusId) {
+        1 { return "Nuova" }
+        2 { return "In lavorazione (assegnata)" }
+        3 { return "In lavorazione (pianificata)" }
+        4 { return "In sospeso" }
         5 { return "Risolto" }
-        6 { return "Chiuso" }
+        6 { return "Chiusa" }
         default { return "-" }
     }
 }
@@ -1009,6 +1065,16 @@ function Invoke-TaskCategoryScan {
             $parentTitle = Get-PropValue $item @("name", "title")
             if (-not $parentTitle) { $parentTitle = "(senza titolo)" }
 
+            $parentKind = switch ($Category) {
+                "chiamate"    { "ticket" }
+                "problemi"    { "problem" }
+                "cambiamenti" { "change" }
+                default       { "" }
+            }
+
+            $parentStatusId = Get-ItemStatusId -Item $item
+            $parentStatusText = Get-ItemStatusText -Item $item -Kind $parentKind
+
             $endpoint = "{0}/{1}" -f $script:apiBaseUrl, ($TaskEndpointTemplate -f $parentId)
             $parentUrl = "{0}{1}?id={2}" -f $script:glpiWebBaseUrl.TrimEnd("/"), $FormPath, [int]$parentId
 
@@ -1024,6 +1090,9 @@ function Invoke-TaskCategoryScan {
                 ParentId = [int]$parentId
                 ParentTitle = [string]$parentTitle
                 ParentUrl = $parentUrl
+                ParentKind = [string]$parentKind
+                ParentStatusId = $parentStatusId
+                ParentStatusText = [string]$parentStatusText
             })
         }
 
@@ -1058,6 +1127,9 @@ function Invoke-TaskCategoryScan {
                                 parentId = $job.ParentId
                                 parentTitle = $job.ParentTitle
                                 parentUrl = $job.ParentUrl
+                                parentKind = $job.ParentKind
+                                parentStatusId = $job.ParentStatusId
+                                parentStatusText = $job.ParentStatusText
                                 taskId = [int]$taskId
                                 taskDate = Format-DateValue $taskDate
                                 content = [string]$content
@@ -1114,7 +1186,7 @@ function Invoke-TaskCategoryScan {
             Sort-Object `
                 @{ Expression = { $_.sortDate }; Descending = $true }, `
                 @{ Expression = { $_.parentId }; Descending = $true } |
-            Select-Object parentId, parentTitle, parentUrl, taskId, taskDate, content
+            Select-Object parentId, parentTitle, parentUrl, parentKind, parentStatusId, parentStatusText, taskId, taskDate, content
     )
 }
 
@@ -1304,10 +1376,14 @@ function New-ListRow {
 
     $updatedDate = Get-ItemDate -Item $Item -FieldNames @("date_mod", "date_creation", "date")
 
+    $statusId = Get-ItemStatusId -Item $Item
+
     return [PSCustomObject]@{
         id = [int]$id
         title = [string]$title
-        status = Get-ItemStatusText -Item $Item
+        status = Get-ItemStatusText -Item $Item -Kind $Kind
+        statusId = $statusId
+        kind = [string]$Kind
         type = [string]$typeText
         updatedAt = Format-DateValue -Date $updatedDate
         sortDate = $updatedDate
@@ -1334,7 +1410,7 @@ function Convert-ItemsToListRows {
             Sort-Object `
                 @{ Expression = { $_.sortDate }; Descending = $true }, `
                 @{ Expression = { $_.id }; Descending = $true } |
-            Select-Object id, title, status, type, updatedAt, url
+            Select-Object id, title, status, statusId, kind, type, updatedAt, url
     )
 }
 
