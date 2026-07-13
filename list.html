@@ -189,6 +189,81 @@
       font-variant-numeric: tabular-nums;
     }
 
+    .filter-bar {
+      padding: 12px 16px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #ffffff;
+      display: grid;
+      grid-template-columns: minmax(220px, 1.7fr) minmax(160px, 1fr) minmax(160px, 1fr) 36px;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .filter-field {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .filter-label {
+      color: #6b7280;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .filter-control {
+      width: 100%;
+      height: 36px;
+      padding: 0 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 9px;
+      background: #ffffff;
+      color: #111827;
+      font: inherit;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 150ms ease, box-shadow 150ms ease;
+    }
+
+    .filter-control:focus {
+      border-color: #6b7280;
+      box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.08);
+    }
+
+    .reset-filter-button {
+      width: 36px;
+      min-width: 36px;
+      height: 36px;
+      padding: 0;
+      border: 1px solid #d1d5db;
+      border-radius: 9px;
+      background: #ffffff;
+      color: #6b7280;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+    }
+
+    .reset-filter-button:hover,
+    .reset-filter-button:focus-visible {
+      background: #111827;
+      border-color: #111827;
+      color: #ffffff;
+      outline: none;
+    }
+
+    .reset-filter-button svg {
+      display: block;
+      width: 17px;
+      height: 17px;
+      pointer-events: none;
+    }
+
     .table-wrap { width: 100%; overflow-x: auto; }
 
     table {
@@ -216,6 +291,63 @@
       position: sticky;
       top: 0;
       z-index: 1;
+    }
+
+    .sortable-header {
+      padding: 0;
+    }
+
+    .sort-button {
+      width: 100%;
+      min-height: 42px;
+      padding: 10px 16px;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 5px;
+      font: inherit;
+      font-weight: inherit;
+      letter-spacing: inherit;
+      text-transform: inherit;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .sort-button:hover,
+    .sort-button:focus-visible {
+      color: #111827;
+      outline: none;
+    }
+
+    .sort-icon {
+      width: 14px;
+      height: 14px;
+      flex: 0 0 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transform: translateY(1px);
+      transition: opacity 120ms ease, transform 120ms ease;
+    }
+
+    .sort-icon svg {
+      display: block;
+      width: 14px;
+      height: 14px;
+    }
+
+    .sortable-header:hover .sort-icon,
+    .sort-button:focus-visible .sort-icon,
+    .sort-button.is-active .sort-icon {
+      opacity: 1;
+    }
+
+    .sort-button[data-direction="desc"] .sort-icon {
+      transform: rotate(180deg) translateY(-1px);
     }
 
     tbody tr:last-child td { border-bottom: 0; }
@@ -302,10 +434,35 @@
       text-align: center;
     }
 
+    @media (max-width: 780px) {
+      .filter-bar {
+        grid-template-columns: 1fr 1fr 36px;
+      }
+
+      .filter-field-title {
+        grid-column: 1 / -1;
+      }
+    }
+
     @media (max-width: 650px) {
       .topbar { align-items: flex-start; flex-direction: column; }
       .refresh-area { width: 100%; justify-content: space-between; }
       .status-area { align-items: flex-start; text-align: left; }
+
+      .filter-bar {
+        grid-template-columns: 1fr 36px;
+      }
+
+      .filter-field-title,
+      .filter-field-state,
+      .filter-field-type {
+        grid-column: 1;
+      }
+
+      .reset-filter-button {
+        grid-column: 2;
+        grid-row: 2;
+      }
     }
   </style>
 </head>
@@ -337,6 +494,46 @@
         <div class="list-card-header">
           <span class="list-label" id="list-label">Elementi</span>
           <span class="count-badge" id="item-count">0</span>
+        </div>
+
+        <div class="filter-bar" aria-label="Filtri elenco">
+          <label class="filter-field filter-field-title">
+            <span class="filter-label">Titolo</span>
+            <input
+              class="filter-control"
+              id="filter-title"
+              type="search"
+              placeholder="Filtra per titolo..."
+              autocomplete="off"
+            >
+          </label>
+
+          <label class="filter-field filter-field-state">
+            <span class="filter-label">Stato</span>
+            <select class="filter-control" id="filter-state">
+              <option value="">Tutti gli stati</option>
+            </select>
+          </label>
+
+          <label class="filter-field filter-field-type">
+            <span class="filter-label">Tipo</span>
+            <select class="filter-control" id="filter-type">
+              <option value="">Tutti i tipi</option>
+            </select>
+          </label>
+
+          <button
+            class="reset-filter-button"
+            id="reset-filters"
+            type="button"
+            aria-label="Azzera filtri e ordinamento"
+            title="Azzera filtri e ordinamento"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 5h16M7 12h10M10 19h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+              <path d="m18 15 3 3m0-3-3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+            </svg>
+          </button>
         </div>
 
         <div class="table-wrap" id="table-container">
@@ -371,6 +568,15 @@
     let nextRefreshAt = Date.now() + REFRESH_MS;
     let refreshTimer = null;
     let isRefreshing = false;
+    let allItems = [];
+
+    const listState = {
+      title: "",
+      state: "",
+      type: "",
+      sortColumn: null,
+      sortDirection: "asc"
+    };
 
     document.title = config.title + " · Personal GLPI Dashboard";
     document.getElementById("page-title").textContent = config.title;
@@ -571,6 +777,7 @@
         refreshTimer = null;
       }
 
+      resetFiltersAndSorting(false);
       refreshList("manuale");
     }
 
@@ -622,15 +829,249 @@
       return counts;
     }
 
-    function renderRows(items) {
-      const safeItems = Array.isArray(items) ? items : [];
+    function normalizeFilterValue(value) {
+      return String(value ?? "").trim();
+    }
+
+    function normalizeSearchValue(value) {
+      return normalizeFilterValue(value).toLocaleLowerCase("it-IT");
+    }
+
+    function uniqueSortedValues(items, propertyName) {
+      const values = new Map();
+
+      for (const item of items) {
+        const original = normalizeFilterValue(item[propertyName]);
+        if (!original || original === "-") continue;
+
+        const key = normalizeSearchValue(original);
+        if (!values.has(key)) values.set(key, original);
+      }
+
+      return Array.from(values.values()).sort((left, right) =>
+        left.localeCompare(right, "it-IT", {
+          sensitivity: "base",
+          numeric: true
+        })
+      );
+    }
+
+    function rebuildSelectOptions(selectId, values, emptyLabel, selectedValue) {
+      const select = document.getElementById(selectId);
+      const normalizedSelection = normalizeFilterValue(selectedValue);
+
+      select.innerHTML = "";
+
+      const emptyOption = document.createElement("option");
+      emptyOption.value = "";
+      emptyOption.textContent = emptyLabel;
+      select.appendChild(emptyOption);
+
+      for (const value of values) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = value;
+        select.appendChild(option);
+      }
+
+      const selectionStillAvailable = Array.from(select.options).some(
+        option => option.value === normalizedSelection
+      );
+
+      select.value = selectionStillAvailable ? normalizedSelection : "";
+    }
+
+    function rebuildFilterOptions() {
+      rebuildSelectOptions(
+        "filter-state",
+        uniqueSortedValues(allItems, "status"),
+        "Tutti gli stati",
+        listState.state
+      );
+
+      rebuildSelectOptions(
+        "filter-type",
+        uniqueSortedValues(allItems, "type"),
+        "Tutti i tipi",
+        listState.type
+      );
+
+      listState.state = document.getElementById("filter-state").value;
+      listState.type = document.getElementById("filter-type").value;
+    }
+
+    function parseDateForSort(value) {
+      const text = normalizeFilterValue(value);
+      if (!text || text === "-") return Number.NEGATIVE_INFINITY;
+
+      const nativeTimestamp = Date.parse(text);
+      if (Number.isFinite(nativeTimestamp)) return nativeTimestamp;
+
+      const match = text.match(
+        /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+      );
+
+      if (!match) return Number.NEGATIVE_INFINITY;
+
+      return new Date(
+        Number(match[3]),
+        Number(match[2]) - 1,
+        Number(match[1]),
+        Number(match[4] || 0),
+        Number(match[5] || 0),
+        Number(match[6] || 0)
+      ).getTime();
+    }
+
+    function getSortValue(item, column) {
+      switch (column) {
+        case "id":
+          return Number(item.id) || 0;
+        case "title":
+          return normalizeFilterValue(item.title);
+        case "status":
+          return normalizeFilterValue(item.status);
+        case "type":
+          return normalizeFilterValue(item.type);
+        case "updatedAt":
+          return parseDateForSort(item.updatedAt);
+        default:
+          return "";
+      }
+    }
+
+    function compareSortValues(left, right, column) {
+      const leftValue = getSortValue(left, column);
+      const rightValue = getSortValue(right, column);
+
+      if (typeof leftValue === "number" && typeof rightValue === "number") {
+        return leftValue - rightValue;
+      }
+
+      return String(leftValue).localeCompare(String(rightValue), "it-IT", {
+        sensitivity: "base",
+        numeric: true
+      });
+    }
+
+    function getVisibleItems() {
+      const titleFilter = normalizeSearchValue(listState.title);
+      const stateFilter = normalizeSearchValue(listState.state);
+      const typeFilter = normalizeSearchValue(listState.type);
+
+      const filtered = allItems.filter(item => {
+        const titleMatches = !titleFilter ||
+          normalizeSearchValue(item.title).includes(titleFilter);
+
+        const stateMatches = !stateFilter ||
+          normalizeSearchValue(item.status) === stateFilter;
+
+        const typeMatches = !typeFilter ||
+          normalizeSearchValue(item.type) === typeFilter;
+
+        return titleMatches && stateMatches && typeMatches;
+      });
+
+      if (!listState.sortColumn) return filtered;
+
+      const directionMultiplier = listState.sortDirection === "desc" ? -1 : 1;
+
+      return filtered
+        .map((item, originalIndex) => ({ item, originalIndex }))
+        .sort((left, right) => {
+          const result = compareSortValues(
+            left.item,
+            right.item,
+            listState.sortColumn
+          );
+
+          return result === 0
+            ? left.originalIndex - right.originalIndex
+            : result * directionMultiplier;
+        })
+        .map(entry => entry.item);
+    }
+
+    function createSortHeader(label, column) {
+      const th = document.createElement("th");
+      th.className = "sortable-header";
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "sort-button";
+      button.dataset.column = column;
+
+      const active = listState.sortColumn === column;
+      if (active) {
+        button.classList.add("is-active");
+        button.dataset.direction = listState.sortDirection;
+      }
+
+      button.setAttribute(
+        "aria-label",
+        active
+          ? "Ordina " + label + " in senso " +
+            (listState.sortDirection === "asc" ? "decrescente" : "crescente")
+          : "Ordina per " + label
+      );
+
+      button.setAttribute(
+        "aria-sort",
+        active
+          ? (listState.sortDirection === "asc" ? "ascending" : "descending")
+          : "none"
+      );
+
+      const text = document.createElement("span");
+      text.textContent = label;
+
+      const icon = document.createElement("span");
+      icon.className = "sort-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.innerHTML = `
+        <svg viewBox="0 0 24 24">
+          <path d="m7 14 5-5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
+      `;
+
+      button.appendChild(text);
+      button.appendChild(icon);
+
+      button.addEventListener("click", () => {
+        if (listState.sortColumn === column) {
+          listState.sortDirection = listState.sortDirection === "asc"
+            ? "desc"
+            : "asc";
+        } else {
+          listState.sortColumn = column;
+          listState.sortDirection = "asc";
+        }
+
+        renderCurrentRows();
+      });
+
+      th.appendChild(button);
+      return th;
+    }
+
+    function renderCurrentRows() {
+      const visibleItems = getVisibleItems();
       const container = document.getElementById("table-container");
       const category = getCategoryForView(view);
       const activityCounts = getActivityCountsByParent(category);
+      const totalCount = allItems.length;
+      const hasActiveView =
+        Boolean(listState.title || listState.state || listState.type || listState.sortColumn);
 
-      document.getElementById("item-count").textContent = String(safeItems.length);
+      const countElement = document.getElementById("item-count");
+      countElement.textContent = visibleItems.length === totalCount
+        ? String(totalCount)
+        : visibleItems.length + " / " + totalCount;
+      countElement.title = hasActiveView
+        ? visibleItems.length + " elementi visualizzati su " + totalCount
+        : totalCount + " elementi";
 
-      if (!safeItems.length) {
+      if (!visibleItems.length) {
         container.innerHTML = '<div class="empty">Nessun elemento trovato</div>';
         return;
       }
@@ -638,16 +1079,21 @@
       const table = document.createElement("table");
       const thead = document.createElement("thead");
       const tbody = document.createElement("tbody");
-
       const headerRow = document.createElement("tr");
-      ["ID", "Titolo", "Stato", "Tipo", "Aggiornato"].forEach(label => {
-        const th = document.createElement("th");
-        th.textContent = label;
-        headerRow.appendChild(th);
+
+      [
+        ["ID", "id"],
+        ["Titolo", "title"],
+        ["Stato", "status"],
+        ["Tipo", "type"],
+        ["Aggiornato", "updatedAt"]
+      ].forEach(([label, column]) => {
+        headerRow.appendChild(createSortHeader(label, column));
       });
+
       thead.appendChild(headerRow);
 
-      for (const item of safeItems) {
+      for (const item of visibleItems) {
         const row = document.createElement("tr");
         row.dataset.url = item.url || "";
         row.tabIndex = 0;
@@ -660,7 +1106,7 @@
         };
 
         row.addEventListener("click", event => {
-          if (event.target.closest("a")) return;
+          if (event.target.closest("a, button, input, select")) return;
           openItem();
         });
 
@@ -736,6 +1182,35 @@
       container.appendChild(table);
     }
 
+    function setRows(items, preserveControls = true) {
+      allItems = Array.isArray(items) ? items.slice() : [];
+
+      if (!preserveControls) {
+        resetFiltersAndSorting(false);
+      }
+
+      rebuildFilterOptions();
+      renderCurrentRows();
+    }
+
+    function resetFiltersAndSorting(shouldRender = true) {
+      listState.title = "";
+      listState.state = "";
+      listState.type = "";
+      listState.sortColumn = null;
+      listState.sortDirection = "asc";
+
+      const titleInput = document.getElementById("filter-title");
+      const stateSelect = document.getElementById("filter-state");
+      const typeSelect = document.getElementById("filter-type");
+
+      if (titleInput) titleInput.value = "";
+      if (stateSelect) stateSelect.value = "";
+      if (typeSelect) typeSelect.value = "";
+
+      if (shouldRender) renderCurrentRows();
+    }
+
     async function readErrorDetails(response) {
       try {
         const contentType = response.headers.get("content-type") || "";
@@ -800,7 +1275,10 @@
 
         const data = await response.json();
         updateCacheFromResponse(data);
-        renderRows(Array.isArray(data.items) ? data.items : []);
+        setRows(
+          Array.isArray(data.items) ? data.items : [],
+          source === "timer"
+        );
 
         setStatus(
           "Aggiornato alle " + (data.aggiornatoAlle || nowText()),
@@ -828,12 +1306,14 @@
     }
 
     function initializeList() {
+      resetFiltersAndSorting(false);
+
       const navigationType = getNavigationType();
       const cachedItems = dashboardCache.lists && dashboardCache.lists[view];
       const cacheAvailable = Array.isArray(cachedItems);
 
       if (cacheAvailable) {
-        renderRows(cachedItems);
+        setRows(cachedItems, false);
 
         const cachedTimestamp = Number(
           dashboardCache.listUpdatedAt && dashboardCache.listUpdatedAt[view]
@@ -861,6 +1341,27 @@
     }
 
     document.getElementById("force-refresh").addEventListener("click", forceRefresh);
+
+    document.getElementById("filter-title").addEventListener("input", event => {
+      listState.title = event.target.value;
+      renderCurrentRows();
+    });
+
+    document.getElementById("filter-state").addEventListener("change", event => {
+      listState.state = event.target.value;
+      renderCurrentRows();
+    });
+
+    document.getElementById("filter-type").addEventListener("change", event => {
+      listState.type = event.target.value;
+      renderCurrentRows();
+    });
+
+    document.getElementById("reset-filters").addEventListener("click", () => {
+      resetFiltersAndSorting(true);
+      document.getElementById("filter-title").focus();
+    });
+
     window.setInterval(updateCountdown, 500);
 
     window.addEventListener("pageshow", function (event) {
@@ -871,7 +1372,7 @@
 
       dashboardCache = latestCache;
       const cachedItems = dashboardCache.lists && dashboardCache.lists[view];
-      if (Array.isArray(cachedItems)) renderRows(cachedItems);
+      if (Array.isArray(cachedItems)) setRows(cachedItems, true);
     });
 
     initializeList();
