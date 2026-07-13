@@ -1,3 +1,4 @@
 .env
 dashboard-server.pid.json
 *.log
+notes-db.json

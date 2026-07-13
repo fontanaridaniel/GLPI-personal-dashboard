@@ -426,6 +426,492 @@
 
     .secondary { color: #6b7280; }
 
+    .notes-header,
+    .notes-cell {
+      position: sticky;
+      right: 0;
+      width: 62px;
+      min-width: 62px;
+      max-width: 62px;
+      padding: 8px 10px;
+      text-align: center;
+      background: #ffffff;
+      box-shadow: -8px 0 12px -12px rgba(15, 23, 42, 0.45);
+    }
+
+    .notes-header {
+      z-index: 4;
+      color: #6b7280;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .notes-cell {
+      z-index: 2;
+    }
+
+    tbody tr:hover .notes-cell,
+    tbody tr:focus-visible .notes-cell {
+      background: #fafafa;
+    }
+
+    .notes-button {
+      position: relative;
+      width: 34px;
+      min-width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      background: #ffffff;
+      color: #4b5563;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 150ms ease, color 150ms ease, border-color 150ms ease, transform 150ms ease;
+    }
+
+    .notes-button:hover,
+    .notes-button:focus-visible {
+      background: #111827;
+      border-color: #111827;
+      color: #ffffff;
+      outline: none;
+      transform: translateY(-1px);
+    }
+
+    .notes-button svg {
+      width: 17px;
+      height: 17px;
+      display: block;
+      pointer-events: none;
+    }
+
+    .notes-count-badge {
+      position: absolute;
+      top: -7px;
+      right: -7px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border: 2px solid #ffffff;
+      border-radius: 999px;
+      background: #dc2626;
+      color: #ffffff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      pointer-events: none;
+    }
+
+    .drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      background: rgba(15, 23, 42, 0.34);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 180ms ease, visibility 180ms ease;
+    }
+
+    .notes-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 90;
+      width: min(460px, 100vw);
+      background: #f8fafc;
+      border-left: 1px solid #dfe3e8;
+      box-shadow: -18px 0 45px rgba(15, 23, 42, 0.18);
+      transform: translateX(100%);
+      transition: transform 220ms ease;
+      display: flex;
+      flex-direction: column;
+    }
+
+    body.drawer-open {
+      overflow: hidden;
+    }
+
+    body.drawer-open .drawer-backdrop {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    body.drawer-open .notes-drawer {
+      transform: translateX(0);
+    }
+
+    .drawer-header {
+      min-height: 62px;
+      padding: 14px 16px;
+      border-bottom: 1px solid #e5e7eb;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .drawer-heading {
+      min-width: 0;
+    }
+
+    .drawer-eyebrow {
+      margin-bottom: 3px;
+      color: #6b7280;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .drawer-title {
+      margin: 0;
+      overflow: hidden;
+      color: #111827;
+      font-size: 18px;
+      line-height: 1.2;
+      font-weight: 800;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .drawer-close {
+      flex: 0 0 36px;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      background: #ffffff;
+      color: #4b5563;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .drawer-close:hover,
+    .drawer-close:focus-visible {
+      background: #111827;
+      border-color: #111827;
+      color: #ffffff;
+      outline: none;
+    }
+
+    .drawer-close svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .drawer-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    .item-summary {
+      margin-bottom: 14px;
+      padding: 13px 14px;
+      border: 1px solid #e5e7eb;
+      border-radius: 13px;
+      background: #ffffff;
+    }
+
+    .item-summary-title {
+      margin: 0 0 10px;
+      color: #111827;
+      font-size: 14px;
+      line-height: 1.35;
+      font-weight: 800;
+    }
+
+    .item-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px 14px;
+    }
+
+    .item-summary-field {
+      min-width: 0;
+    }
+
+    .item-summary-label {
+      display: block;
+      margin-bottom: 2px;
+      color: #9ca3af;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .item-summary-value {
+      display: block;
+      overflow: hidden;
+      color: #4b5563;
+      font-size: 12px;
+      line-height: 1.35;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .note-composer {
+      margin-bottom: 14px;
+      padding: 13px;
+      border: 1px solid #e5e7eb;
+      border-radius: 13px;
+      background: #ffffff;
+    }
+
+    .note-composer textarea,
+    .note-edit-textarea {
+      width: 100%;
+      min-height: 92px;
+      resize: vertical;
+      padding: 10px 11px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      background: #ffffff;
+      color: #111827;
+      font: inherit;
+      font-size: 13px;
+      line-height: 1.45;
+      outline: none;
+    }
+
+    .note-composer textarea:focus,
+    .note-edit-textarea:focus {
+      border-color: #6b7280;
+      box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.08);
+    }
+
+    .composer-footer,
+    .note-edit-actions {
+      margin-top: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .composer-hint {
+      color: #9ca3af;
+      font-size: 10px;
+    }
+
+    .primary-small-button,
+    .secondary-small-button,
+    .danger-small-button {
+      min-height: 32px;
+      padding: 0 11px;
+      border-radius: 9px;
+      font: inherit;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .primary-small-button {
+      border: 1px solid #111827;
+      background: #111827;
+      color: #ffffff;
+    }
+
+    .primary-small-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .secondary-small-button {
+      border: 1px solid #d1d5db;
+      background: #ffffff;
+      color: #4b5563;
+    }
+
+    .danger-small-button {
+      border: 1px solid #fecaca;
+      background: #fff7f7;
+      color: #b91c1c;
+    }
+
+    .notes-section-header {
+      margin: 0 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .notes-section-title {
+      margin: 0;
+      color: #6b7280;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .drawer-note-count {
+      min-width: 24px;
+      height: 22px;
+      padding: 0 7px;
+      border-radius: 999px;
+      background: #111827;
+      color: #ffffff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    .notes-list {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+
+    .note-card {
+      padding: 11px;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      background: #ffffff;
+      transition: opacity 150ms ease, transform 150ms ease, border-color 150ms ease;
+    }
+
+    .note-card.is-completed {
+      opacity: 0.64;
+    }
+
+    .note-card.is-dragging {
+      opacity: 0.35;
+    }
+
+    .note-card.drag-over {
+      border-color: #111827;
+      transform: translateY(2px);
+    }
+
+    .note-card-top {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .drag-handle {
+      flex: 0 0 24px;
+      width: 24px;
+      height: 28px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: #9ca3af;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+    }
+
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+
+    .drag-handle svg {
+      width: 16px;
+      height: 16px;
+      pointer-events: none;
+    }
+
+    .note-content-wrap {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .note-text {
+      margin: 0;
+      color: #374151;
+      font-size: 13px;
+      line-height: 1.48;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .note-card.is-completed .note-text {
+      text-decoration: line-through;
+    }
+
+    .note-date {
+      margin-top: 7px;
+      color: #9ca3af;
+      font-size: 10px;
+    }
+
+    .note-actions {
+      margin-top: 9px;
+      padding-top: 8px;
+      border-top: 1px solid #f0f2f4;
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
+    .note-action-button {
+      min-height: 29px;
+      padding: 0 8px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #6b7280;
+      font: inherit;
+      font-size: 10px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .note-action-button:hover,
+    .note-action-button:focus-visible {
+      border-color: #9ca3af;
+      color: #111827;
+      outline: none;
+    }
+
+    .note-action-button.complete {
+      color: #047857;
+    }
+
+    .note-action-button.delete {
+      color: #b91c1c;
+    }
+
+    .drawer-empty,
+    .drawer-loading,
+    .drawer-error {
+      padding: 22px 12px;
+      border: 1px dashed #d1d5db;
+      border-radius: 12px;
+      color: #6b7280;
+      background: #ffffff;
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .drawer-error {
+      border-color: #fecaca;
+      color: #b91c1c;
+      background: #fff7f7;
+    }
+
     .empty,
     .loading {
       padding: 30px 18px;
@@ -543,6 +1029,74 @@
     </div>
   </main>
 
+  <div class="drawer-backdrop" id="drawer-backdrop" aria-hidden="true"></div>
+
+  <aside
+    class="notes-drawer"
+    id="notes-drawer"
+    aria-hidden="true"
+    aria-labelledby="drawer-title"
+  >
+    <header class="drawer-header">
+      <div class="drawer-heading">
+        <div class="drawer-eyebrow">Note personali</div>
+        <h2 class="drawer-title" id="drawer-title">Note</h2>
+      </div>
+
+      <button class="drawer-close" id="drawer-close" type="button" aria-label="Chiudi note" title="Chiudi">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m7 7 10 10M17 7 7 17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+        </svg>
+      </button>
+    </header>
+
+    <div class="drawer-scroll">
+      <section class="item-summary" aria-label="Informazioni elemento">
+        <h3 class="item-summary-title" id="drawer-item-title">-</h3>
+        <div class="item-summary-grid">
+          <div class="item-summary-field">
+            <span class="item-summary-label">ID</span>
+            <span class="item-summary-value" id="drawer-item-id">-</span>
+          </div>
+          <div class="item-summary-field">
+            <span class="item-summary-label">Stato</span>
+            <span class="item-summary-value" id="drawer-item-status">-</span>
+          </div>
+          <div class="item-summary-field">
+            <span class="item-summary-label">Tipo</span>
+            <span class="item-summary-value" id="drawer-item-type">-</span>
+          </div>
+          <div class="item-summary-field">
+            <span class="item-summary-label">Aggiornato</span>
+            <span class="item-summary-value" id="drawer-item-updated">-</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="note-composer">
+        <textarea
+          id="new-note-text"
+          maxlength="10000"
+          placeholder="Scrivi una nuova nota..."
+          aria-label="Nuova nota"
+        ></textarea>
+        <div class="composer-footer">
+          <span class="composer-hint">Ctrl + Invio per aggiungere</span>
+          <button class="primary-small-button" id="add-note" type="button">Aggiungi nota</button>
+        </div>
+      </section>
+
+      <div class="notes-section-header">
+        <h3 class="notes-section-title">Note salvate</h3>
+        <span class="drawer-note-count" id="drawer-note-count">0</span>
+      </div>
+
+      <div class="notes-list" id="notes-list">
+        <div class="drawer-loading">Caricamento note...</div>
+      </div>
+    </div>
+  </aside>
+
   <script>
     const configuredRefreshSeconds = Number("__AUTO_REFRESH_SECONDS__");
     const REFRESH_SECONDS = Number.isFinite(configuredRefreshSeconds) && configuredRefreshSeconds >= 10
@@ -569,6 +1123,11 @@
     let refreshTimer = null;
     let isRefreshing = false;
     let allItems = [];
+    let noteCounts = new Map();
+    let currentDrawerItem = null;
+    let currentNotes = [];
+    let editingNoteId = null;
+    let draggedNoteId = null;
 
     const listState = {
       title: "",
@@ -813,6 +1372,437 @@
       if (currentView === "problemi") return "problemi";
       if (currentView === "cambiamenti") return "cambiamenti";
       return null;
+    }
+
+    function getNoteKindForView(currentView) {
+      if (["totali-aperti", "nuovi-incidenti", "nuove-richieste", "assegnati-a-me", "chiamate"].includes(currentView)) {
+        return "ticket";
+      }
+
+      if (currentView === "problemi") return "problem";
+      if (currentView === "cambiamenti") return "change";
+      return "ticket";
+    }
+
+    function getNoteIconSvg() {
+      return `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 4.5h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-4.5 3v-3H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
+          <path d="M8 8.5h8M8 12h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+        </svg>
+      `;
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, {
+        cache: "no-store",
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(options.headers || {})
+        }
+      });
+
+      let payload = null;
+      const text = await response.text();
+      if (text) {
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          payload = text;
+        }
+      }
+
+      if (!response.ok) {
+        const message = payload && payload.message
+          ? payload.message
+          : (typeof payload === "string" && payload ? payload : "HTTP " + response.status);
+        throw new Error(message);
+      }
+
+      return payload;
+    }
+
+    async function loadNoteCounts(shouldRender = true) {
+      const kind = getNoteKindForView(view);
+
+      try {
+        const data = await requestJson(
+          "/api/notes/counts?kind=" + encodeURIComponent(kind) + "&ts=" + Date.now(),
+          { method: "GET" }
+        );
+
+        noteCounts = new Map();
+        const counts = data && data.counts && typeof data.counts === "object"
+          ? data.counts
+          : {};
+
+        for (const [itemId, count] of Object.entries(counts)) {
+          noteCounts.set(String(itemId), Number(count) || 0);
+        }
+
+        if (shouldRender) renderCurrentRows();
+      } catch (error) {
+        console.error("Impossibile caricare i conteggi note", error);
+      }
+    }
+
+    function updateNoteCount(itemId, count, shouldRender = true) {
+      const key = String(itemId);
+      const numericCount = Math.max(0, Number(count) || 0);
+
+      if (numericCount > 0) {
+        noteCounts.set(key, numericCount);
+      } else {
+        noteCounts.delete(key);
+      }
+
+      if (shouldRender) renderCurrentRows();
+    }
+
+    function setDrawerOpen(isOpen) {
+      document.body.classList.toggle("drawer-open", isOpen);
+      document.getElementById("notes-drawer").setAttribute("aria-hidden", String(!isOpen));
+      document.getElementById("drawer-backdrop").setAttribute("aria-hidden", String(!isOpen));
+
+      if (!isOpen) {
+        currentDrawerItem = null;
+        currentNotes = [];
+        editingNoteId = null;
+        draggedNoteId = null;
+      }
+    }
+
+    function fillDrawerSummary(item) {
+      document.getElementById("drawer-title").textContent = "Note · #" + item.id;
+      document.getElementById("drawer-item-title").textContent = item.title || "(senza titolo)";
+      document.getElementById("drawer-item-id").textContent = "#" + item.id;
+      document.getElementById("drawer-item-status").textContent = item.status || "-";
+      document.getElementById("drawer-item-type").textContent = item.type || "-";
+      document.getElementById("drawer-item-updated").textContent = item.updatedAt || "-";
+    }
+
+    async function openNotesDrawer(item) {
+      currentDrawerItem = item;
+      currentNotes = [];
+      editingNoteId = null;
+      draggedNoteId = null;
+
+      fillDrawerSummary(item);
+      document.getElementById("new-note-text").value = "";
+      document.getElementById("notes-list").innerHTML = '<div class="drawer-loading">Caricamento note...</div>';
+      document.getElementById("drawer-note-count").textContent = "0";
+      setDrawerOpen(true);
+
+      window.setTimeout(() => document.getElementById("new-note-text").focus(), 180);
+      await loadDrawerNotes();
+    }
+
+    function closeNotesDrawer() {
+      setDrawerOpen(false);
+    }
+
+    async function loadDrawerNotes() {
+      if (!currentDrawerItem) return;
+
+      const kind = getNoteKindForView(view);
+      const itemId = currentDrawerItem.id;
+
+      try {
+        const data = await requestJson(
+          "/api/notes?kind=" + encodeURIComponent(kind) +
+          "&itemId=" + encodeURIComponent(itemId) +
+          "&ts=" + Date.now(),
+          { method: "GET" }
+        );
+
+        if (!currentDrawerItem || String(currentDrawerItem.id) !== String(itemId)) return;
+
+        currentNotes = Array.isArray(data.notes) ? data.notes : [];
+        updateNoteCount(itemId, currentNotes.length, true);
+        renderNotes();
+      } catch (error) {
+        console.error("Errore caricamento note", error);
+        document.getElementById("notes-list").innerHTML =
+          '<div class="drawer-error">Errore caricamento note: ' + escapeHtml(error.message) + '</div>';
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatNoteDate(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "-";
+
+      return date.toLocaleString("it-IT", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function renderNotes() {
+      const container = document.getElementById("notes-list");
+      document.getElementById("drawer-note-count").textContent = String(currentNotes.length);
+
+      if (!currentNotes.length) {
+        container.innerHTML = '<div class="drawer-empty">Nessuna nota presente</div>';
+        return;
+      }
+
+      container.innerHTML = "";
+
+      for (const note of currentNotes) {
+        const card = document.createElement("article");
+        card.className = "note-card" + (note.completed ? " is-completed" : "");
+        card.dataset.noteId = note.id;
+
+        if (editingNoteId === note.id) {
+          const textarea = document.createElement("textarea");
+          textarea.className = "note-edit-textarea";
+          textarea.maxLength = 10000;
+          textarea.value = note.text || "";
+
+          const actions = document.createElement("div");
+          actions.className = "note-edit-actions";
+
+          const cancel = document.createElement("button");
+          cancel.className = "secondary-small-button";
+          cancel.type = "button";
+          cancel.textContent = "Annulla";
+          cancel.addEventListener("click", () => {
+            editingNoteId = null;
+            renderNotes();
+          });
+
+          const save = document.createElement("button");
+          save.className = "primary-small-button";
+          save.type = "button";
+          save.textContent = "Salva";
+          save.addEventListener("click", async () => {
+            const text = textarea.value.trim();
+            if (!text) {
+              textarea.focus();
+              return;
+            }
+
+            save.disabled = true;
+            await updateNote(note.id, { text });
+          });
+
+          actions.appendChild(cancel);
+          actions.appendChild(save);
+          card.appendChild(textarea);
+          card.appendChild(actions);
+          container.appendChild(card);
+          window.setTimeout(() => textarea.focus(), 0);
+          continue;
+        }
+
+        const top = document.createElement("div");
+        top.className = "note-card-top";
+
+        const dragHandle = document.createElement("button");
+        dragHandle.className = "drag-handle";
+        dragHandle.type = "button";
+        dragHandle.draggable = true;
+        dragHandle.title = "Trascina per riordinare";
+        dragHandle.setAttribute("aria-label", "Trascina per riordinare");
+        dragHandle.innerHTML = `
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="9" cy="7" r="1.4" fill="currentColor"></circle>
+            <circle cx="15" cy="7" r="1.4" fill="currentColor"></circle>
+            <circle cx="9" cy="12" r="1.4" fill="currentColor"></circle>
+            <circle cx="15" cy="12" r="1.4" fill="currentColor"></circle>
+            <circle cx="9" cy="17" r="1.4" fill="currentColor"></circle>
+            <circle cx="15" cy="17" r="1.4" fill="currentColor"></circle>
+          </svg>
+        `;
+
+        dragHandle.addEventListener("dragstart", event => {
+          draggedNoteId = note.id;
+          card.classList.add("is-dragging");
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", note.id);
+        });
+
+        dragHandle.addEventListener("dragend", () => {
+          draggedNoteId = null;
+          card.classList.remove("is-dragging");
+          document.querySelectorAll(".note-card.drag-over").forEach(element => element.classList.remove("drag-over"));
+        });
+
+        card.addEventListener("dragover", event => {
+          if (!draggedNoteId || draggedNoteId === note.id) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          card.classList.add("drag-over");
+        });
+
+        card.addEventListener("dragleave", () => card.classList.remove("drag-over"));
+
+        card.addEventListener("drop", async event => {
+          event.preventDefault();
+          card.classList.remove("drag-over");
+          if (!draggedNoteId || draggedNoteId === note.id) return;
+          await moveNoteBefore(draggedNoteId, note.id);
+        });
+
+        const contentWrap = document.createElement("div");
+        contentWrap.className = "note-content-wrap";
+
+        const text = document.createElement("p");
+        text.className = "note-text";
+        text.textContent = note.text || "";
+
+        const date = document.createElement("div");
+        date.className = "note-date";
+        date.textContent = "Aggiornata " + formatNoteDate(note.updatedAt || note.createdAt);
+
+        contentWrap.appendChild(text);
+        contentWrap.appendChild(date);
+        top.appendChild(dragHandle);
+        top.appendChild(contentWrap);
+
+        const actions = document.createElement("div");
+        actions.className = "note-actions";
+
+        const complete = document.createElement("button");
+        complete.className = "note-action-button complete";
+        complete.type = "button";
+        complete.textContent = note.completed ? "Riapri" : "Completa";
+        complete.addEventListener("click", () => updateNote(note.id, { completed: !note.completed }));
+
+        const edit = document.createElement("button");
+        edit.className = "note-action-button";
+        edit.type = "button";
+        edit.textContent = "Modifica";
+        edit.addEventListener("click", () => {
+          editingNoteId = note.id;
+          renderNotes();
+        });
+
+        const remove = document.createElement("button");
+        remove.className = "note-action-button delete";
+        remove.type = "button";
+        remove.textContent = "Elimina";
+        remove.addEventListener("click", () => deleteNote(note.id));
+
+        actions.appendChild(complete);
+        actions.appendChild(edit);
+        actions.appendChild(remove);
+        card.appendChild(top);
+        card.appendChild(actions);
+        container.appendChild(card);
+      }
+    }
+
+    async function addNote() {
+      if (!currentDrawerItem) return;
+
+      const textarea = document.getElementById("new-note-text");
+      const button = document.getElementById("add-note");
+      const text = textarea.value.trim();
+      if (!text) {
+        textarea.focus();
+        return;
+      }
+
+      button.disabled = true;
+
+      try {
+        const data = await requestJson("/api/notes", {
+          method: "POST",
+          body: JSON.stringify({
+            kind: getNoteKindForView(view),
+            itemId: currentDrawerItem.id,
+            text
+          })
+        });
+
+        currentNotes = Array.isArray(data.notes) ? data.notes : [];
+        textarea.value = "";
+        updateNoteCount(currentDrawerItem.id, currentNotes.length, true);
+        renderNotes();
+        textarea.focus();
+      } catch (error) {
+        window.alert("Impossibile aggiungere la nota: " + error.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function updateNote(noteId, patch) {
+      try {
+        const data = await requestJson("/api/notes/" + encodeURIComponent(noteId), {
+          method: "PUT",
+          body: JSON.stringify(patch)
+        });
+
+        currentNotes = Array.isArray(data.notes) ? data.notes : [];
+        editingNoteId = null;
+        updateNoteCount(currentDrawerItem.id, currentNotes.length, true);
+        renderNotes();
+      } catch (error) {
+        window.alert("Impossibile aggiornare la nota: " + error.message);
+      }
+    }
+
+    async function deleteNote(noteId) {
+      if (!window.confirm("Eliminare definitivamente questa nota?")) return;
+
+      try {
+        const data = await requestJson("/api/notes/" + encodeURIComponent(noteId), {
+          method: "DELETE"
+        });
+
+        currentNotes = Array.isArray(data.notes) ? data.notes : [];
+        updateNoteCount(currentDrawerItem.id, currentNotes.length, true);
+        renderNotes();
+      } catch (error) {
+        window.alert("Impossibile eliminare la nota: " + error.message);
+      }
+    }
+
+    async function moveNoteBefore(sourceId, targetId) {
+      const sourceIndex = currentNotes.findIndex(note => note.id === sourceId);
+      const targetIndex = currentNotes.findIndex(note => note.id === targetId);
+      if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return;
+
+      const previousOrder = currentNotes.slice();
+      const nextNotes = currentNotes.slice();
+      const [moved] = nextNotes.splice(sourceIndex, 1);
+      const adjustedTarget = nextNotes.findIndex(note => note.id === targetId);
+      nextNotes.splice(adjustedTarget, 0, moved);
+      currentNotes = nextNotes;
+      renderNotes();
+
+      try {
+        const data = await requestJson("/api/notes/reorder", {
+          method: "POST",
+          body: JSON.stringify({
+            kind: getNoteKindForView(view),
+            itemId: currentDrawerItem.id,
+            ids: currentNotes.map(note => note.id)
+          })
+        });
+
+        currentNotes = Array.isArray(data.notes) ? data.notes : currentNotes;
+        renderNotes();
+      } catch (error) {
+        currentNotes = previousOrder;
+        renderNotes();
+        window.alert("Impossibile riordinare le note: " + error.message);
+      }
     }
 
     function getActivityCountsByParent(category) {
@@ -1091,6 +2081,12 @@
         headerRow.appendChild(createSortHeader(label, column));
       });
 
+      const notesHeader = document.createElement("th");
+      notesHeader.className = "notes-header";
+      notesHeader.scope = "col";
+      notesHeader.textContent = "Note";
+      headerRow.appendChild(notesHeader);
+
       thead.appendChild(headerRow);
 
       for (const item of visibleItems) {
@@ -1168,11 +2164,38 @@
         dateCell.className = "secondary";
         dateCell.textContent = item.updatedAt || "-";
 
+        const notesCell = document.createElement("td");
+        notesCell.className = "notes-cell";
+
+        const notesButton = document.createElement("button");
+        notesButton.className = "notes-button";
+        notesButton.type = "button";
+        notesButton.innerHTML = getNoteIconSvg();
+        notesButton.title = "Apri note";
+        notesButton.setAttribute("aria-label", "Apri note per " + (item.title || "elemento GLPI"));
+        notesButton.addEventListener("click", event => {
+          event.stopPropagation();
+          openNotesDrawer(item);
+        });
+
+        const noteCount = noteCounts.get(String(item.id)) || 0;
+        if (noteCount > 0) {
+          const noteBadge = document.createElement("span");
+          noteBadge.className = "notes-count-badge";
+          noteBadge.textContent = String(noteCount);
+          noteBadge.setAttribute("aria-hidden", "true");
+          notesButton.appendChild(noteBadge);
+          notesButton.title = noteCount === 1 ? "1 nota" : noteCount + " note";
+        }
+
+        notesCell.appendChild(notesButton);
+
         row.appendChild(idCell);
         row.appendChild(titleCell);
         row.appendChild(statusCell);
         row.appendChild(typeCell);
         row.appendChild(dateCell);
+        row.appendChild(notesCell);
         tbody.appendChild(row);
       }
 
@@ -1280,6 +2303,8 @@
           source === "timer"
         );
 
+        await loadNoteCounts(true);
+
         setStatus(
           "Aggiornato alle " + (data.aggiornatoAlle || nowText()),
           "ok"
@@ -1314,6 +2339,7 @@
 
       if (cacheAvailable) {
         setRows(cachedItems, false);
+        loadNoteCounts(true);
 
         const cachedTimestamp = Number(
           dashboardCache.listUpdatedAt && dashboardCache.listUpdatedAt[view]
@@ -1362,6 +2388,23 @@
       document.getElementById("filter-title").focus();
     });
 
+    document.getElementById("drawer-close").addEventListener("click", closeNotesDrawer);
+    document.getElementById("drawer-backdrop").addEventListener("click", closeNotesDrawer);
+    document.getElementById("add-note").addEventListener("click", addNote);
+
+    document.getElementById("new-note-text").addEventListener("keydown", event => {
+      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        addNote();
+      }
+    });
+
+    window.addEventListener("keydown", event => {
+      if (event.key === "Escape" && document.body.classList.contains("drawer-open")) {
+        closeNotesDrawer();
+      }
+    });
+
     window.setInterval(updateCountdown, 500);
 
     window.addEventListener("pageshow", function (event) {
@@ -1372,7 +2415,10 @@
 
       dashboardCache = latestCache;
       const cachedItems = dashboardCache.lists && dashboardCache.lists[view];
-      if (Array.isArray(cachedItems)) setRows(cachedItems, true);
+      if (Array.isArray(cachedItems)) {
+        setRows(cachedItems, true);
+        loadNoteCounts(true);
+      }
     });
 
     initializeList();

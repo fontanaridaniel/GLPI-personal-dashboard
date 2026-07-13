@@ -8,6 +8,7 @@ $envPath = Join-Path $scriptDir ".env"
 $dashboardPath = Join-Path $scriptDir "dashboard.html"
 $listPath = Join-Path $scriptDir "list.html"
 $pidPath = Join-Path $scriptDir "dashboard-server.pid.json"
+$notesDbPath = Join-Path $scriptDir "notes-db.json"
 
 $ticketResourcePath = "Assistance/Ticket"
 $problemResourcePath = "Assistance/Problem"
@@ -27,6 +28,7 @@ $script:accessToken = $null
 $script:logLevel = "INFO"
 $script:taskConcurrency = 6
 $script:autoRefreshSeconds = 60
+$script:notesLock = New-Object object
 
 # =========================
 # LOGGING / ERRORS
@@ -884,14 +886,16 @@ function Get-DashboardStatsFromTickets {
 function Test-TaskBelongsToUser {
     param ($Task, [int]$UserId)
 
+    # Only the technician explicitly assigned to execute the task is valid.
+    # Do not include the task author/editor, otherwise unrelated tasks appear.
     $taskData = Get-TaskData $Task
+    $assignedTechnician = Get-PropValue $taskData @("user_tech")
+    $assignedTechnicianId = Get-IdValue $assignedTechnician
 
-    foreach ($field in @("user", "user_editor", "user_tech")) {
-        $id = Get-IdValue (Get-PropValue $taskData @($field))
-        if ($null -ne $id -and [int]$id -eq $UserId) { return $true }
-    }
-
-    return $false
+    return (
+        $null -ne $assignedTechnicianId -and
+        [int]$assignedTechnicianId -eq [int]$UserId
+    )
 }
 
 function Test-TaskIsTodo {
@@ -1570,6 +1574,343 @@ function Get-ListData {
     }
 }
 
+
+# =========================
+# LOCAL NOTES DATABASE
+# =========================
+
+function Test-ValidNoteKind {
+    param ([string]$Kind)
+
+    return @("ticket", "problem", "change") -contains (($Kind + "").Trim().ToLowerInvariant())
+}
+
+function New-EmptyNotesDatabase {
+    return [PSCustomObject]@{
+        version = 1
+        notes = @()
+    }
+}
+
+function Initialize-NotesDatabase {
+    if (Test-Path $notesDbPath) { return }
+
+    $database = New-EmptyNotesDatabase
+    $json = $database | ConvertTo-Json -Depth 20
+    Set-Content -Path $notesDbPath -Value $json -Encoding UTF8 -Force
+}
+
+function Read-NotesDatabaseUnlocked {
+    Initialize-NotesDatabase
+
+    try {
+        $raw = Get-Content -Path $notesDbPath -Raw -Encoding UTF8
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            return New-EmptyNotesDatabase
+        }
+
+        $database = $raw | ConvertFrom-Json
+        if ($null -eq $database) { return New-EmptyNotesDatabase }
+
+        $notesProperty = Get-PropertyObject -Object $database -Name "notes"
+        if ($null -eq $notesProperty) {
+            $database | Add-Member -NotePropertyName notes -NotePropertyValue @() -Force
+        }
+
+        return $database
+    }
+    catch {
+        Write-Log -Level ERROR -Message "Database note non leggibile" -Data @{
+            path = $notesDbPath
+            message = $_.Exception.Message
+        }
+        throw "Impossibile leggere il database delle note."
+    }
+}
+
+function Save-NotesDatabaseUnlocked {
+    param ($Database)
+
+    $temporaryPath = "$notesDbPath.tmp"
+    $json = $Database | ConvertTo-Json -Depth 30
+
+    try {
+        Set-Content -Path $temporaryPath -Value $json -Encoding UTF8 -Force
+        Move-Item -Path $temporaryPath -Destination $notesDbPath -Force
+    }
+    finally {
+        if (Test-Path $temporaryPath) {
+            Remove-Item -Path $temporaryPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Invoke-WithNotesLock {
+    param ([scriptblock]$ScriptBlock)
+
+    [System.Threading.Monitor]::Enter($script:notesLock)
+    try {
+        return & $ScriptBlock
+    }
+    finally {
+        [System.Threading.Monitor]::Exit($script:notesLock)
+    }
+}
+
+function Convert-NoteToPublicObject {
+    param ($Note)
+
+    return [PSCustomObject]@{
+        id = [string](Get-PropValue $Note @("id"))
+        kind = [string](Get-PropValue $Note @("kind"))
+        itemId = [int](Get-IdValue (Get-PropValue $Note @("itemId")))
+        text = [string](Get-PropValue $Note @("text"))
+        completed = [bool](Get-PropValue $Note @("completed"))
+        order = [int](Get-IdValue (Get-PropValue $Note @("order")))
+        createdAt = [string](Get-PropValue $Note @("createdAt"))
+        updatedAt = [string](Get-PropValue $Note @("updatedAt"))
+    }
+}
+
+function Get-NotesForItem {
+    param (
+        [string]$Kind,
+        [int]$ItemId
+    )
+
+    $normalizedKind = ($Kind + "").Trim().ToLowerInvariant()
+    if (-not (Test-ValidNoteKind $normalizedKind)) { throw "Tipo elemento non valido." }
+    if ($ItemId -le 0) { throw "ID elemento non valido." }
+
+    return Invoke-WithNotesLock {
+        $database = Read-NotesDatabaseUnlocked
+        $notes = @(
+            @(Convert-ToArray (Get-PropValue $database @("notes"))) |
+                Where-Object {
+                    ([string](Get-PropValue $_ @("kind"))).ToLowerInvariant() -eq $normalizedKind -and
+                    [int](Get-IdValue (Get-PropValue $_ @("itemId"))) -eq $ItemId
+                } |
+                Sort-Object `
+                    @{ Expression = { [int](Get-IdValue (Get-PropValue $_ @("order"))) }; Descending = $false }, `
+                    @{ Expression = { [string](Get-PropValue $_ @("createdAt")) }; Descending = $false }
+        )
+
+        return @($notes | ForEach-Object { Convert-NoteToPublicObject $_ })
+    }
+}
+
+function Get-NoteCountsByKind {
+    param ([string]$Kind)
+
+    $normalizedKind = ($Kind + "").Trim().ToLowerInvariant()
+    if (-not (Test-ValidNoteKind $normalizedKind)) { throw "Tipo elemento non valido." }
+
+    return Invoke-WithNotesLock {
+        $database = Read-NotesDatabaseUnlocked
+        $counts = [ordered]@{}
+
+        foreach ($note in @(Convert-ToArray (Get-PropValue $database @("notes")))) {
+            if (([string](Get-PropValue $note @("kind"))).ToLowerInvariant() -ne $normalizedKind) {
+                continue
+            }
+
+            $itemId = Get-IdValue (Get-PropValue $note @("itemId"))
+            if ($null -eq $itemId) { continue }
+
+            $key = [string][int]$itemId
+            if (-not $counts.Contains($key)) { $counts[$key] = 0 }
+            $counts[$key] = [int]$counts[$key] + 1
+        }
+
+        return [PSCustomObject]$counts
+    }
+}
+
+function Add-ItemNote {
+    param (
+        [string]$Kind,
+        [int]$ItemId,
+        [string]$Text
+    )
+
+    $normalizedKind = ($Kind + "").Trim().ToLowerInvariant()
+    $normalizedText = ($Text + "").Trim()
+
+    if (-not (Test-ValidNoteKind $normalizedKind)) { throw "Tipo elemento non valido." }
+    if ($ItemId -le 0) { throw "ID elemento non valido." }
+    if ([string]::IsNullOrWhiteSpace($normalizedText)) { throw "La nota non può essere vuota." }
+    if ($normalizedText.Length -gt 10000) { throw "La nota supera il limite di 10000 caratteri." }
+
+    return Invoke-WithNotesLock {
+        $database = Read-NotesDatabaseUnlocked
+        $allNotes = @(Convert-ToArray (Get-PropValue $database @("notes")))
+        $existing = @(
+            $allNotes | Where-Object {
+                ([string](Get-PropValue $_ @("kind"))).ToLowerInvariant() -eq $normalizedKind -and
+                [int](Get-IdValue (Get-PropValue $_ @("itemId"))) -eq $ItemId
+            }
+        )
+
+        $nextOrder = if ($existing.Count -eq 0) {
+            0
+        }
+        else {
+            1 + [int](($existing | ForEach-Object {
+                [int](Get-IdValue (Get-PropValue $_ @("order")))
+            } | Measure-Object -Maximum).Maximum)
+        }
+
+        $now = (Get-Date).ToString("o")
+        $note = [PSCustomObject]@{
+            id = [guid]::NewGuid().ToString("N")
+            kind = $normalizedKind
+            itemId = $ItemId
+            text = $normalizedText
+            completed = $false
+            order = $nextOrder
+            createdAt = $now
+            updatedAt = $now
+        }
+
+        $database.notes = @($allNotes + $note)
+        Save-NotesDatabaseUnlocked -Database $database
+
+        return Convert-NoteToPublicObject $note
+    }
+}
+
+function Update-ItemNote {
+    param (
+        [string]$NoteId,
+        $Payload
+    )
+
+    $normalizedId = ($NoteId + "").Trim()
+    if ([string]::IsNullOrWhiteSpace($normalizedId)) { throw "ID nota non valido." }
+
+    return Invoke-WithNotesLock {
+        $database = Read-NotesDatabaseUnlocked
+        $allNotes = @(Convert-ToArray (Get-PropValue $database @("notes")))
+        $note = $allNotes | Where-Object { [string](Get-PropValue $_ @("id")) -eq $normalizedId } | Select-Object -First 1
+
+        if ($null -eq $note) { throw "Nota non trovata." }
+
+        $textProperty = Get-PropertyObject -Object $Payload -Name "text"
+        if ($null -ne $textProperty) {
+            $newText = ([string]$textProperty.Value).Trim()
+            if ([string]::IsNullOrWhiteSpace($newText)) { throw "La nota non può essere vuota." }
+            if ($newText.Length -gt 10000) { throw "La nota supera il limite di 10000 caratteri." }
+            $note.text = $newText
+        }
+
+        $completedProperty = Get-PropertyObject -Object $Payload -Name "completed"
+        if ($null -ne $completedProperty) {
+            $note.completed = [bool]$completedProperty.Value
+        }
+
+        $note.updatedAt = (Get-Date).ToString("o")
+        $database.notes = @($allNotes)
+        Save-NotesDatabaseUnlocked -Database $database
+
+        return Convert-NoteToPublicObject $note
+    }
+}
+
+function Remove-ItemNote {
+    param ([string]$NoteId)
+
+    $normalizedId = ($NoteId + "").Trim()
+    if ([string]::IsNullOrWhiteSpace($normalizedId)) { throw "ID nota non valido." }
+
+    return Invoke-WithNotesLock {
+        $database = Read-NotesDatabaseUnlocked
+        $allNotes = @(Convert-ToArray (Get-PropValue $database @("notes")))
+        $note = $allNotes | Where-Object { [string](Get-PropValue $_ @("id")) -eq $normalizedId } | Select-Object -First 1
+        if ($null -eq $note) { throw "Nota non trovata." }
+
+        $remaining = @($allNotes | Where-Object { [string](Get-PropValue $_ @("id")) -ne $normalizedId })
+        $database.notes = $remaining
+        Save-NotesDatabaseUnlocked -Database $database
+
+        return Convert-NoteToPublicObject $note
+    }
+}
+
+function Set-ItemNoteOrder {
+    param (
+        [string]$Kind,
+        [int]$ItemId,
+        [array]$NoteIds
+    )
+
+    $normalizedKind = ($Kind + "").Trim().ToLowerInvariant()
+    if (-not (Test-ValidNoteKind $normalizedKind)) { throw "Tipo elemento non valido." }
+    if ($ItemId -le 0) { throw "ID elemento non valido." }
+
+    return Invoke-WithNotesLock {
+        $database = Read-NotesDatabaseUnlocked
+        $allNotes = @(Convert-ToArray (Get-PropValue $database @("notes")))
+        $itemNotes = @(
+            $allNotes | Where-Object {
+                ([string](Get-PropValue $_ @("kind"))).ToLowerInvariant() -eq $normalizedKind -and
+                [int](Get-IdValue (Get-PropValue $_ @("itemId"))) -eq $ItemId
+            }
+        )
+
+        $knownIds = @{}
+        foreach ($note in $itemNotes) {
+            $knownIds[[string](Get-PropValue $note @("id"))] = $note
+        }
+
+        $orderedIds = New-Object System.Collections.Generic.List[string]
+        foreach ($id in @($NoteIds)) {
+            $normalizedId = ([string]$id).Trim()
+            if ($knownIds.ContainsKey($normalizedId) -and -not $orderedIds.Contains($normalizedId)) {
+                $orderedIds.Add($normalizedId)
+            }
+        }
+
+        foreach ($note in $itemNotes) {
+            $id = [string](Get-PropValue $note @("id"))
+            if (-not $orderedIds.Contains($id)) { $orderedIds.Add($id) }
+        }
+
+        for ($index = 0; $index -lt $orderedIds.Count; $index++) {
+            $knownIds[$orderedIds[$index]].order = $index
+            $knownIds[$orderedIds[$index]].updatedAt = (Get-Date).ToString("o")
+        }
+
+        $database.notes = @($allNotes)
+        Save-NotesDatabaseUnlocked -Database $database
+
+        return @(
+            $orderedIds | ForEach-Object {
+                Convert-NoteToPublicObject $knownIds[$_]
+            }
+        )
+    }
+}
+
+function Read-JsonRequestBody {
+    param ([System.Net.HttpListenerRequest]$Request)
+
+    if (-not $Request.HasEntityBody) { return [PSCustomObject]@{} }
+    if ($Request.ContentLength64 -gt 1048576) { throw "Corpo richiesta troppo grande." }
+
+    $encoding = if ($Request.ContentEncoding) { $Request.ContentEncoding } else { [System.Text.Encoding]::UTF8 }
+    $reader = [System.IO.StreamReader]::new($Request.InputStream, $encoding)
+
+    try {
+        $raw = $reader.ReadToEnd()
+    }
+    finally {
+        $reader.Dispose()
+    }
+
+    if ([string]::IsNullOrWhiteSpace($raw)) { return [PSCustomObject]@{} }
+    return $raw | ConvertFrom-Json
+}
+
 # =========================
 # HTTP RESPONSES / ROUTES
 # =========================
@@ -1638,8 +1979,93 @@ function Handle-Request {
 
     $request = $Context.Request
     $path = $request.Url.AbsolutePath.ToLowerInvariant()
+    $method = $request.HttpMethod.ToUpperInvariant()
 
-    if ($request.HttpMethod -ne "GET") {
+    # Notes are stored locally and support a small CRUD API.
+    if ($path -eq "/api/notes/counts" -and $method -eq "GET") {
+        $kind = [string]$request.QueryString["kind"]
+        Send-Json -Context $Context -Object ([PSCustomObject]@{
+            kind = $kind
+            counts = Get-NoteCountsByKind -Kind $kind
+        })
+        return
+    }
+
+    if ($path -eq "/api/notes" -and $method -eq "GET") {
+        $kind = [string]$request.QueryString["kind"]
+        $itemId = 0
+        if (-not [int]::TryParse([string]$request.QueryString["itemId"], [ref]$itemId)) {
+            throw "ID elemento non valido."
+        }
+
+        $notes = @(Get-NotesForItem -Kind $kind -ItemId $itemId)
+        Send-Json -Context $Context -Object ([PSCustomObject]@{
+            kind = $kind
+            itemId = $itemId
+            count = $notes.Count
+            notes = $notes
+        })
+        return
+    }
+
+    if ($path -eq "/api/notes" -and $method -eq "POST") {
+        $payload = Read-JsonRequestBody -Request $request
+        $kind = [string](Get-PropValue $payload @("kind"))
+        $itemId = [int](Get-IdValue (Get-PropValue $payload @("itemId")))
+        $text = [string](Get-PropValue $payload @("text"))
+        $note = Add-ItemNote -Kind $kind -ItemId $itemId -Text $text
+        $notes = @(Get-NotesForItem -Kind $kind -ItemId $itemId)
+
+        Send-Json -Context $Context -StatusCode 201 -Object ([PSCustomObject]@{
+            note = $note
+            count = $notes.Count
+            notes = $notes
+        })
+        return
+    }
+
+    if ($path -eq "/api/notes/reorder" -and $method -eq "POST") {
+        $payload = Read-JsonRequestBody -Request $request
+        $kind = [string](Get-PropValue $payload @("kind"))
+        $itemId = [int](Get-IdValue (Get-PropValue $payload @("itemId")))
+        $ids = @(Convert-ToArray (Get-PropValue $payload @("ids")))
+        $notes = @(Set-ItemNoteOrder -Kind $kind -ItemId $itemId -NoteIds $ids)
+
+        Send-Json -Context $Context -Object ([PSCustomObject]@{
+            count = $notes.Count
+            notes = $notes
+        })
+        return
+    }
+
+    if ($path -match "^/api/notes/([a-z0-9]+)$" -and $method -eq "PUT") {
+        $noteId = $matches[1]
+        $payload = Read-JsonRequestBody -Request $request
+        $note = Update-ItemNote -NoteId $noteId -Payload $payload
+        $notes = @(Get-NotesForItem -Kind $note.kind -ItemId $note.itemId)
+
+        Send-Json -Context $Context -Object ([PSCustomObject]@{
+            note = $note
+            count = $notes.Count
+            notes = $notes
+        })
+        return
+    }
+
+    if ($path -match "^/api/notes/([a-z0-9]+)$" -and $method -eq "DELETE") {
+        $noteId = $matches[1]
+        $deleted = Remove-ItemNote -NoteId $noteId
+        $notes = @(Get-NotesForItem -Kind $deleted.kind -ItemId $deleted.itemId)
+
+        Send-Json -Context $Context -Object ([PSCustomObject]@{
+            deletedId = $noteId
+            count = $notes.Count
+            notes = $notes
+        })
+        return
+    }
+
+    if ($method -ne "GET") {
         Send-Response -Context $Context -StatusCode 405 -Body "Metodo non consentito" -ContentType "text/plain"
         return
     }
@@ -1858,6 +2284,7 @@ Write-Log -Level INFO -Message "Configurazione caricata" -Data @{
     logLevel = $script:logLevel
 }
 
+Initialize-NotesDatabase
 Initialize-DashboardSingleInstance
 Register-DashboardShutdownHandlers
 
