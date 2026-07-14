@@ -5,8 +5,8 @@ $ErrorActionPreference = "Stop"
 
 $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $envPath = Join-Path $scriptDir ".env"
-$dashboardPath = Join-Path $scriptDir "dashboard.html"
-$listPath = Join-Path $scriptDir "list.html"
+$dashboardPath = Join-Path $scriptDir "templates/dashboard.html"
+$listPath = Join-Path $scriptDir "templates/list.html"
 $pidPath = Join-Path $scriptDir "dashboard-server.pid.json"
 
 # Legacy locations used by previous versions. Existing files are migrated
